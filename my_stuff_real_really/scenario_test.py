@@ -11,29 +11,23 @@ from test_controller import TestController
 
 # Define game scenario
 my_test_scenario = Scenario(name='Test Scenario',
-                            #num_asteroids=20,
-                            asteroid_states=[
-                                {'position': (00, 50), 'angle': 2, 'size': 3, 'speed': 200},
-                                {'position': (100, 750), 'angle': 21, 'size': 1, 'speed': 320},
-                                {'position': (600, 512), 'angle': 29, 'size': 2, 'speed': 120},
-                                {'position': (500, 100), 'angle': 0, 'size': 1, 'speed': 500},
-
-                               
-                                
+                           asteroid_states=[ 
+                                {'position': (500, 100), 'angle': 0, 'size': 3, 'speed': 200},  
                             ],
+                            
                             ship_states=[
-                                {'position': (800, 400), 'angle': 0, 'lives': 3, 'team': 1, "mines_remaining": 3},
+                                {'position': (400, 400), 'angle': 90, 'lives': 3, 'team': 1, "mines_remaining": 3},
                                 # {'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
                             ],
-                            map_size=(1500, 900),
-                            time_limit=100000,
+                            map_size=(1000, 800),
+                            time_limit=100000000,
                             ammo_limit_multiplier=0,
                             stop_if_no_ammo=False)
 
 # Define Game Settings
 game_settings = {'perf_tracker': True,
                  'graphics_type': GraphicsType.Tkinter,
-                 'realtime_multiplier': 0.5,
+                 'realtime_multiplier': 2,
                  'graphics_obj': None,
                  'frequency': 30}
 
@@ -42,7 +36,7 @@ game = KesslerGame(settings=game_settings)  # Use this to visualize the game sce
 
 # Evaluate the game
 pre = time.perf_counter()
-score, perf_data = game.run(scenario=my_test_scenario, controllers=[TestController()])
+score, perf_data = game.run(scenario=my_test_scenario, controllers=[TestController(), TestController()])
 
 # Print out some general info about the result
 print('Scenario eval time: '+str(time.perf_counter()-pre))
