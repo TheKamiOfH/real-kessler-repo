@@ -71,8 +71,9 @@ class TestController(KesslerController):
         Any variables or initialization desired for the controller can be set up here
         """
         ...
-        self.dead_asteroids_list = []
+        self.dead_asteroids_dict = {} # Dictionary to keep track of dead asteroids
         self.shoot_next_frame = False
+        self.shoot_this_frame = False
         self.shot_last_frame = 0
         self.current_frame = 0
 
@@ -90,27 +91,35 @@ class TestController(KesslerController):
             bool: fire control value. Shoots if true
             bool: mine deployment control value. Lays mine if true
         """
-        nearest_asteroids = will_collide(ship_state, game_state, self.current_frame)
-        for asteroid in nearest_asteroids:
-            # Calculate distance to each asteroid
-            dist = distance(ship_state['position'], asteroid[0]['position'])
-            asteroid[2] = dist  # Update the asteroid with its distance
-            asteroid_bz = back_to_zero(asteroid[0], game_state)
-            #if asteroid_bz not in self.dead_asteroids_list:
-                #nearest_asteroids.remove(asteroid)  # Remove the asteroid if it has already been processed
-        # Sort asteroids by distance
-        nearest_asteroids.sort(key=lambda x: (x[1],x[2]))
+        if (not(self.current_frame in self.dead_asteroids_dict.keys()) and not(self.current_frame < max(self.dead_asteroids_dict.keys(), default=0))) or (self.current_frame==0):
+            nearest_asteroids = will_collide(ship_state, game_state, self.current_frame)
+            for asteroid in nearest_asteroids:
+                # Calculate distance to each asteroid
+                dist = distance(ship_state['position'], asteroid[0]['position'])
+                asteroid[2] = dist  # Update the asteroid with its distance
+                asteroid_bz = back_to_zero(asteroid[0], game_state)
+                #if asteroid_bz not in self.dead_asteroids_list:
+                    #nearest_asteroids.remove(asteroid)  # Remove the asteroid if it has already been processed
+            # Sort asteroids by distance
+            nearest_asteroids.sort(key=lambda x: (x[1],x[2]))
+        else:
+            if self.current_frame in self.dead_asteroids_dict.keys():
+                self.shoot_next_frame = True
+            else:
+                nearest_asteroids = False
         thrust = 0
         turn_rate = 0
-        fire = True
+        fire = False
+        self.shoot_this_frame = self.shoot_next_frame
         drop_mine = False
         foresight = 800/30 # 800 pixels per second, assuming 30 FPS
         f = self.current_frame + 1 - 1 #To prevent aliasing
-        
-       
-        # Print the nearest asteroid's position and distance
-        if nearest_asteroids:
-            closest_asteroid = nearest_asteroids[0][0]  # Get the closest asteroid by heuristic 
+        time = 1000 #Time until we can shoot, in frames
+
+
+        try:
+            nearest_asteroids = will_collide(ship_state, game_state, self.current_frame)
+            closest_asteroid = nearest_asteroids[0][0]  # Get the closest asteroid by heuristic
             #print(f"Closest asteroid at {closest_asteroid['position']} with distance {nearest_asteroids[0][0]} and velocity {closest_asteroid['velocity']}")
             #pprint(game_state)
             #print(ship_state)
@@ -119,25 +128,30 @@ class TestController(KesslerController):
         
 
 
-            while((f<25+self.current_frame) ):
+            while((f<25+self.current_frame) and (time > 1)):
                 # Calculate the future position of the closest asteroid
             
-                future_x = (closest_asteroid['position'][0] + (closest_asteroid['velocity'][0]/30)  * (f))%1000
-                future_y = (closest_asteroid['position'][1] + (closest_asteroid['velocity'][1]/30)  * (f))%800
+                future_x = (closest_asteroid['position'][0] + (closest_asteroid['velocity'][0]/30)  * (f-self.current_frame+1))%1000
+                future_y = (closest_asteroid['position'][1] + (closest_asteroid['velocity'][1]/30)  * (f-self.current_frame+1))%800
                 ship_x = ship_state['position'][0]
                 ship_y = ship_state['position'][1]
+                dist = distance((future_x,future_y),(ship_x,ship_y))
                 angle_to_target = math.degrees(math.atan2(future_y - ship_y, future_x - ship_x))
-                angle_difference = (angle_to_target - ship_state['heading']) % 360 
+                angle_difference = (angle_to_target - ship_state['heading']) % 360
+                time = (dist/foresight) - (f-self.current_frame)  # this should be less than 1 frame, otherwise we are too far away to shoot
                 if angle_difference >= 180:  # Normalize to [-180, 180]
                     angle_difference -= 360
 
-                if abs(angle_difference) <= 6*f:
+                if (abs(angle_difference) <= 6*(f-self.current_frame)) and (time <= 1):  # If we can turn in one frame and shoot in the next
                     #If we can turn in one frame, we can shoot in the next frame
                     turn_rate = angle_difference*30 # Turn rate in degrees per second, assuming 30 FPS
-                    self.shoot_next_frame = True
+                    #self.shoot_next_frame = True
+                    self.dead_asteroids_dict[f] = back_to_zero(closest_asteroid, game_state) # Store the asteroid in the dead asteroids dictionary
                     break
                 else:
                     f+=1
+        except:
+            pass
             
 
             
@@ -149,9 +163,14 @@ class TestController(KesslerController):
         #alpha = math.degrees(math.atan2((Va*(math.sin(math.radians(theta)))), (Vb - Va*(math.cos(math.radians(theta))))))  # Angle to aim at
         #print(f"Angle to aim at: {alpha} degrees")
         
-        if self.shoot_next_frame:
-            fire = True # doesnt matter even if we decide to turn this frame because our shot will be from the original position so we can both turn and shoot
-            self.shoot_next_frame = False
+        if self.shoot_this_frame and not(ship_state["is_respawning"]) and ship_state["can_fire"]:
+            fire = True
+        else:
+            fire = False
+        
+        #if self.shoot_next_frame:
+            #fire = True # doesnt matter even if we decide to turn this frame because our shot will be from the original position so we can both turn and shoot
+            #self.shoot_next_frame = False
 
         if abs(turn_rate) >= 180.0:
             fire = False
