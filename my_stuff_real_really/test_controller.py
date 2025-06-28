@@ -189,8 +189,8 @@ class TestController(KesslerController):
             dist = distance(ship_state['position'], asteroid[0]['position'])
             asteroid[2] = dist  # Update the asteroid with its distance
             asteroid_bz = back_to_zero(asteroid[0], game_state)
-            #if asteroid_bz in self.dead_asteroids_dict.keys():
-                #nearest_asteroids.remove(asteroid)
+            if asteroid_bz in self.dead_asteroids_dict.keys():
+                nearest_asteroids.remove(asteroid)
         # Sort asteroids by distance
         nearest_asteroids.sort(key=lambda x: (x[1],x[2]))
         #print(f"Nearest asteroids: {nearest_asteroids}")
@@ -211,10 +211,18 @@ class TestController(KesslerController):
         else:
             closest_asteroid = {}
             #print("No asteroids in range")
-            
+        if self.current_frame in self.sequence.keys():
+            self.targeted = self.sequence[self.current_frame][4]  # Check if we are currently targeting an asteroid   
+        if self.targeted:#sanity checking our targeted asteroid
+            for i in nearest_asteroids:
+                if back_to_zero(i[0], game_state) == self.sequence[self.current_frame][5]:
+                    self.targeted = False 
+                    for j in self.sequence.keys()[self.current_frame:]:
+                        if self.sequence[j][5] == self.sequence[self.current_frame][5]:
+                            self.sequence[j][4] = False
 
 
-        while((f<200+self.current_frame) and (time > 1) and not (self.targeted) and (closest_asteroid != {})):
+        while((f<30+self.current_frame) and not (self.targeted) and (closest_asteroid != {})):
             # Calculate the future position of the closest 
             #print(f"Frame {f}: Checking asteroid at {closest_asteroid['position']} with velocity {closest_asteroid['velocity']}")
             X = ((closest_asteroid['position'][0] + closest_asteroid['velocity'][0] * (f-self.current_frame+1) / 30) % 1000)- ship_state['position'][0]
@@ -260,26 +268,29 @@ class TestController(KesslerController):
                     self.sequence[f] = [sign*(abs(angle_difference)%6)*30,False,False,0,True,back_to_zero(closest_asteroid, game_state)]
                 else:
                     self.sequence[f][0] = sign*(abs(angle_difference)%6)*30
+                    self.sequence[f][4] = True
                 if f+1 not in self.sequence.keys():
-                    self.sequence[f+1] = [sign*(abs(angle_difference)%6)*30,True,False,0,False,back_to_zero(closest_asteroid, game_state)]
+                    self.sequence[f+1] = [0,True,False,0,False,back_to_zero(closest_asteroid, game_state)]
                 else:
                     self.sequence[f+1][1] = True
                     self.sequence[f+1][4] = False
-                self.dead_asteroids_dict[back_to_zero(closest_asteroid, game_state)] = math.ceil(ttk)  # Mark the asteroid as dead at frame f+1
+                self.dead_asteroids_dict[back_to_zero(closest_asteroid, game_state)] = math.ceil(ttk+f)+1  # Mark the asteroid as dead at frame f+1
                 #print("Broke")
                 break
             else:
-                time = 1000
                 f+=1
             #print            
            
         # Check if we have a sequence of actions for the current frame
         if self.current_frame in self.sequence.keys():
             turn_rate = self.sequence[self.current_frame][0]
-            fire = self.sequence[self.current_frame][1]
             drop_mine = self.sequence[self.current_frame][2]
             thrust = self.sequence[self.current_frame][3]
             self.targeted = self.sequence[self.current_frame][4]
+            if ship_state['ammo']>29:#change this to improve accuracy maybe implement bisection
+                fire = True
+            else:
+                fire = self.sequence[self.current_frame][1]
         self.current_frame += 1
 
         return thrust, turn_rate, fire, drop_mine
