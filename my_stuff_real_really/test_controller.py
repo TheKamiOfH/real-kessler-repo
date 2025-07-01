@@ -136,7 +136,7 @@ def will_collide(ship_state: Dict, game_state: Dict, frame_number: int) -> list:
             initial_turning = 0
         else:
             initial_turning = 9999999999999
-        while distance(ship_state['position'], asteroid_copy['position']) > 22 and f < frame_number + 100:  # Assuming ship radius is 22
+        while distance(ship_state['position'], asteroid_copy['position']) > (asteroid_copy.get('radius', asteroid_copy['size']*8.0)) and f < frame_number + 100:  # Assuming ship radius is 22
             # Change 25
             # Update asteroid position based on its velocity
             asteroid_copy['position'] = ((asteroid['position'][0] + asteroid['velocity'][0]*(f-frame_number) / 30)%1000,  
@@ -197,8 +197,41 @@ def Dukem_n_Nukem(nearest_asteroids: list, ship_state: Dict,current_frame:int) -
                 
                 break
     return(0,0)      
+def asteroid_score(asteroid_entry, ship_state):
+    asteroid, frames_until_collision, _, initial_turning = asteroid_entry
+    dist = distance(ship_state['position'], asteroid['position'])
+    size = asteroid.get('size', 1)
+    # Lower score is better: prioritize soonest collision, smallest turn, closest, largest
+    return (
+        frames_until_collision,           # Sooner collision is better
+        abs(initial_turning),             # Smaller turn is better
+        dist,                             # Closer is better
+        -size                             # Larger is better
+    )
+def circle_line_collision(cx, cy, radius, x1, y1, x2, y2):
+    # Check if the line segment (x1, y1)-(x2, y2) intersects the circle (cx, cy, radius)
+    # Returns True if collision, False otherwise
+    dx = x2 - x1
+    dy = y2 - y1
+    fx = x1 - cx
+    fy = y1 - cy
 
-    
+    a = dx*dx + dy*dy
+    b = 2 * (fx*dx + fy*dy)
+    c = (fx*fx + fy*fy) - radius*radius
+
+    discriminant = b*b - 4*a*c
+    if discriminant < 0:
+        return False  # No intersection
+
+    discriminant = math.sqrt(discriminant)
+    t1 = (-b - discriminant) / (2*a)
+    t2 = (-b + discriminant) / (2*a)
+
+    if (0 <= t1 <= 1) or (0 <= t2 <= 1):
+        return True
+    return False
+
 class TestController(KesslerController):
     def __init__(self):
         """
@@ -232,6 +265,8 @@ class TestController(KesslerController):
        
        
         foresight = 800/30 # 800 pixels per second, assuming 30 FPS
+        found = False
+        hit = False
         f = self.current_frame + 1 - 1 #To prevent aliasing
         time = 1000 #Time until we can shoot, in frames
         self.dead_asteroids_dict = {k: v for k, v in self.dead_asteroids_dict.items() if v > self.current_frame}  # Remove dead asteroids that are no longer relevant
@@ -239,15 +274,23 @@ class TestController(KesslerController):
         thrust = 0  # Initialize thrust action
         turn_rate = 0  # Initialize turn rate
         nearest_asteroids = will_collide(ship_state, game_state, self.current_frame)
-        for asteroid in nearest_asteroids[:]:  # Iterate over a copy
-            dist = distance(ship_state['position'], asteroid[0]['position'])
-            asteroid[2] = dist  # Update the asteroid with its distance
-            asteroid_bz = back_to_zero(asteroid[0], game_state)
-            if asteroid_bz in self.dead_asteroids_dict.keys():
-                nearest_asteroids.remove(asteroid)
-        # Sort asteroids by distance
-        nearest_asteroids.sort(key=lambda x: (x[3],x[1], x[2]))  # Sort by frames until collision, initial turning, and distance
-        #print(f"Nearest asteroids: {nearest_asteroids}")
+        already_targeted = set(self.dead_asteroids_dict.keys())
+        nearest_asteroids = [a for a in nearest_asteroids if back_to_zero(a[0], game_state) not in already_targeted]
+        #USE IMMINENT LOGIC MAYBE FOR NUKING
+        imminent = [a for a in nearest_asteroids if a[1] - self.current_frame <= 10]
+        if imminent:
+            nearest_asteroids = sorted(imminent, key=lambda x: x[1])
+        else:
+            for asteroid in nearest_asteroids[:]:  # Iterate over a copy
+                dist = distance(ship_state['position'], asteroid[0]['position'])
+                asteroid[2] = dist  # Update the asteroid with its distance
+                asteroid_bz = back_to_zero(asteroid[0], game_state)
+                if asteroid_bz in self.dead_asteroids_dict.keys():
+                    nearest_asteroids.remove(asteroid)
+            # Sort asteroids by distance
+            nearest_asteroids.sort(key=lambda x: asteroid_score(x, ship_state))  # Sort by frames until collision, initial turning, and distance
+            #print(f"Nearest asteroids: {nearest_asteroids}")
+        '''
         if nearest_asteroids != []:
             self.closest_asteroid = nearest_asteroids[0][0]
             if (self.num_mines_to_drop<=0) and ((self.current_frame - self.frame_to_drop > 0) or self.current_frame == 0) and (ship_state['mines_remaining'] > 0):
@@ -256,6 +299,7 @@ class TestController(KesslerController):
                     self.num_mines_to_drop = nuke_logic[0]
                     self.frame_to_drop = nuke_logic[1]
                     self.mine_dropped = False
+        '''
                 
                     
 
@@ -263,35 +307,33 @@ class TestController(KesslerController):
             
         #nearest_asteroids = will_collide(ship_state, game_state, self.current_frame)
         #print(self.current_frame," : ",len(nearest_asteroids))
-        if nearest_asteroids != []:
-            closest_asteroid = nearest_asteroids[0][0]  # Get the closest asteroid by heuristic
-            #print(self.current_frame)
-            #print(f"Closest asteroid at {closest_asteroid['position']} with distance {nearest_asteroids[0][1]} and velocity {closest_asteroid['velocity']}")
-            #pprint(game_state)
-            #print(ship_state)
-        else:
-            closest_asteroid = {}
+        closest_asteroid = nearest_asteroids[0][0] if nearest_asteroids else {}
+            
+         
             #print("No asteroids in range")
         if self.current_frame in self.sequence.keys():
             self.targeted = self.sequence[self.current_frame][4]  # Check if we are currently targeting an asteroid
-        if self.targeted:  # sanity checking our targeted asteroid
-            if (closest_asteroid != {}) and (back_to_zero(closest_asteroid, game_state) != self.sequence[self.current_frame][5]):
-                self.targeted = False
-                self.sequence[self.current_frame][4] = False  # Reset the targeted flag for the sequence
-                self.sequence[self.current_frame][1] = False  # Reset the fire action for the sequence
+            if self.targeted:  # sanity checking our targeted asteroid
+                if (closest_asteroid != {}) and (back_to_zero(closest_asteroid, game_state) != self.sequence[self.current_frame][5]):
+                    self.targeted = False
+                    self.sequence[self.current_frame][4] = False  # Reset the targeted flag for the sequence
+                    self.sequence[self.current_frame][1] = False  # Reset the fire action for the sequence
 
-                for j in list(self.sequence.keys())[self.current_frame:]:
-                    if self.sequence[j][4] and back_to_zero(closest_asteroid, game_state) == self.sequence[j][5]:
-                        self.sequence[j][4] = False  # Reset the targeted flag for the sequence
-                        self.sequence[j][1] = False  # Reset the fire action for the sequence
+                    for j in list(self.sequence.keys())[self.current_frame:]:
+                        if self.sequence[j][4] and back_to_zero(closest_asteroid, game_state) == self.sequence[j][5]:
+                            self.sequence[j][4] = False  # Reset the targeted flag for the sequence
+                            self.sequence[j][1] = False  # Reset the fire action for the sequence
                         
 
         while((f<30+self.current_frame) and not (self.targeted) and (closest_asteroid != {})):
             # Calculate the future position of the closest 
             #print(f"Frame {f}: Checking asteroid at {closest_asteroid['position']} with velocity {closest_asteroid['velocity']}")
-            X = ((closest_asteroid['position'][0] + closest_asteroid['velocity'][0] * (f-self.current_frame+1) / 30) % 1000)- ship_state['position'][0]
-            Y = ((closest_asteroid['position'][1] + closest_asteroid['velocity'][1] * (f-self.current_frame+1) / 30) % 800)- ship_state['position'][1]
-
+            bullet_spawn_x = ship_state['position'][0] + 20 * math.cos(math.radians(ship_state['heading']))
+            bullet_spawn_y = ship_state['position'][1] + 20 * math.sin(math.radians(ship_state['heading']))
+            asteroid_future_x = (closest_asteroid['position'][0] + closest_asteroid['velocity'][0] * (f - self.current_frame + 1) / 30) % 1000
+            asteroid_future_y = (closest_asteroid['position'][1] + closest_asteroid['velocity'][1] * (f - self.current_frame + 1) / 30) % 800
+            X = asteroid_future_x - bullet_spawn_x
+            Y = asteroid_future_y - bullet_spawn_y
             V0 = magnitude(closest_asteroid['velocity'])  # Speed of the asteroid
             theta1 = math.degrees(math.atan2(closest_asteroid['velocity'][1], closest_asteroid['velocity'][0]))  # Angle of the asteroid's velocity 
             #theta1 = math.degrees(math.atan2(Y - ship_state['position'][1], X - ship_state['position'][0]))  # Angle to the asteroid from the ship's position
@@ -314,6 +356,8 @@ class TestController(KesslerController):
             #(ttk >= (time + f - self.current_frame+1)) and
             
             if (abs(angle_difference)<=6*(f-self.current_frame)):
+                found = True
+                break
                 #print(f"Frame {f}: Targeting asteroid at {closest_asteroid['position']} with angle difference {angle_difference} and time to collision {ttk}")
                 #if self.current_frame not in self.sequence.keys():
                     #self.sequence[self.current_frame] = [angle_difference*30,False,False,0,True,back_to_zero(closest_asteroid, game_state)]
@@ -343,16 +387,116 @@ class TestController(KesslerController):
                 break
             else:
                 f+=1
+        if found:
+            best_f = f
+            best_angle = angle_difference
+            min_dist = float('inf')
+            bullet_spawn_x = ship_state['position'][0] + 20 * math.cos(math.radians(ship_state['heading']))
+            bullet_spawn_y = ship_state['position'][1] + 20 * math.sin(math.radians(ship_state['heading']))
+            V0 = magnitude(closest_asteroid['velocity'])
+            theta1 = math.degrees(math.atan2(closest_asteroid['velocity'][1], closest_asteroid['velocity'][0]))
+            sign = math.copysign(1,angle_difference)
+            for df in range(0, 7):  # f, f+1, f+2
+                
+                candidate_f = f + df
+                heading_at_f = ship_state['heading'] + sign * 6 * (candidate_f - self.current_frame)
+                heading_at_f %= 360
+                bullet_spawn_x = ship_state['position'][0] + 20 * math.cos(math.radians(heading_at_f))
+                bullet_spawn_y = ship_state['position'][1] + 20 * math.sin(math.radians(heading_at_f))
+                asteroid_future_x = (closest_asteroid['position'][0] + closest_asteroid['velocity'][0] * (candidate_f - self.current_frame + 1) / 30) % 1000
+                asteroid_future_y = (closest_asteroid['position'][1] + closest_asteroid['velocity'][1] * (candidate_f - self.current_frame + 1) / 30) % 800
+                X = asteroid_future_x - bullet_spawn_x
+                Y = asteroid_future_y - bullet_spawn_y
+                solution = new_solve_motion_time(X, Y, theta1, V0/30)
+                angle_to_target = solution['theta2_deg']
+                angle_difference = (angle_to_target - ship_state['heading']) % 360
+                if angle_difference >= 180:
+                     angle_difference -= 360
+                bullet_travel_time = solution['time']
+                bullet_impact_x = bullet_spawn_x + (bullet_travel_time * 80/3) * math.cos(math.radians(angle_to_target))
+                bullet_impact_y = bullet_spawn_y + (bullet_travel_time * 80/3) * math.sin(math.radians(angle_to_target))
+                asteroid_impact_x = (asteroid_future_x + closest_asteroid['velocity'][0] * bullet_travel_time) % 1000
+                asteroid_impact_y = (asteroid_future_y + closest_asteroid['velocity'][1] * bullet_travel_time) % 800
+                asteroid_radius = closest_asteroid.get('radius', closest_asteroid.get('size', 1) * 8.0)
+                bullet_speed = 80/3  # px/frame
+                dt = 1  # frame step
+                max_steps = 60  # simulate up to 2 seconds
+
+                bx, by = bullet_spawn_x, bullet_spawn_y
+                ax, ay = asteroid_future_x, asteroid_future_y
+
+                vx = bullet_speed * math.cos(math.radians(angle_to_target))
+                vy = bullet_speed * math.sin(math.radians(angle_to_target))
+                avx = closest_asteroid['velocity'][0] / 30
+                avy = closest_asteroid['velocity'][1] / 30
+
+                hit = False
+                for step in range(1, max_steps+1):
+                    prev_bx, prev_by = bx, by
+                    bx += vx * dt
+                    by += vy * dt
+                    ax = (ax + avx * dt) % 1000
+                    ay = (ay + avy * dt) % 800
+                    if circle_line_collision(ax, ay, asteroid_radius, prev_bx, prev_by, bx, by):
+                        hit = True
+                        break
+
+                if hit:
+                    # This candidate_f and angle are valid, so consider for best shot
+                    min_dist = step
+                    best_f = candidate_f
+                    best_angle = angle_difference
+                    sign = math.copysign(1, best_angle)
+                    # Calculate the heading and bullet spawn for best_f
+                    heading_at_best_f = ship_state['heading'] + sign * 6 * (best_f - self.current_frame)
+                    heading_at_best_f %= 360
+                    bullet_spawn_x = ship_state['position'][0] + 20 * math.cos(math.radians(heading_at_best_f))
+                    bullet_spawn_y = ship_state['position'][1] + 20 * math.sin(math.radians(heading_at_best_f))
+
+                    # For aiming, use asteroid's position at best_f+1
+                    asteroid_future_x = (closest_asteroid['position'][0] + closest_asteroid['velocity'][0] * (best_f - self.current_frame + 1) / 30) % 1000
+                    asteroid_future_y = (closest_asteroid['position'][1] + closest_asteroid['velocity'][1] * (best_f - self.current_frame + 1) / 30) % 800
+                    X = asteroid_future_x - bullet_spawn_x
+                    Y = asteroid_future_y - bullet_spawn_y
+
+                    # Now solve for the intercept using these positions
+                    solution = new_solve_motion_time(X, Y, theta1, V0/30)
+                    angle_to_target = solution['theta2_deg']
+                    angle_difference = (angle_to_target - heading_at_best_f) % 360
+                    if angle_difference >= 180:
+                        angle_difference -= 360
+
+                    # Schedule the turn and fire at best_f
+                    for i in range(self.current_frame + 1, best_f):
+                        if i not in self.sequence.keys():
+                            self.sequence[i] = [sign*6*30, False, False, 0, True, back_to_zero(closest_asteroid, game_state)]
+                        else:
+                            self.sequence[i][0] = sign*6*30
+                            self.sequence[i][5] = back_to_zero(closest_asteroid, game_state)
+
+                    # At best_f, stop turning and fire
+                    if best_f not in self.sequence.keys():
+                        self.sequence[best_f] = [0, True, False, 0, False, back_to_zero(closest_asteroid, game_state)]
+                    else:
+                        self.sequence[best_f][0] = 0
+                        self.sequence[best_f][1] = True
+                        self.sequence[best_f][4] = False
+                        self.sequence[best_f][5] = back_to_zero(closest_asteroid, game_state)
+                    self.dead_asteroids_dict[back_to_zero(closest_asteroid, game_state)] = (solution['time'] + best_f) + 1  # Mark the asteroid as dead at frame best_f+1
+                    break
+
         if game_state['sim_frame'] == 0:
             print(ship_state['bullets_remaining'])
             #print 
         if self.current_frame in self.sequence.keys():            
             fire = self.sequence[self.current_frame][1]
-        if (ship_state['bullets_remaining']>29) or (ship_state['bullets_remaining']==-1):
+        '''   
+        if (ship_state['bullets_remaining']>34) or (ship_state['bullets_remaining']==-1):
              #change this to improve accuracy maybe implement bisection
              if (ship_state['can_fire']):
                   if(self.current_frame+1 in list(self.sequence.keys()) and self.current_frame+2 in list(self.sequence.keys()) and not(self.sequence[self.current_frame+1][1] or self.sequence[self.current_frame+2][1])):
                     fire = True
+        '''
         #else:
             #fire = self.sequence[self.current_frame][1] if self.current_frame in self.sequence.keys() else False
         # Check if we have a sequence of actions for the current frame
@@ -360,8 +504,8 @@ class TestController(KesslerController):
         if self.current_frame in self.sequence.keys():
             turn_rate = self.sequence[self.current_frame][0]
             thrust = self.sequence[self.current_frame][3]
-            if (self.dropped_mine_cuz_scared):
-                drop_mine = True
+            #if (self.dropped_mine_cuz_scared):
+                #drop_mine = True
             if (self.num_mines_to_drop>0 and self.current_frame == self.frame_to_drop) or (ship_state['is_respawning']):
                 if(ship_state['is_respawning']):
                     self.dropped_mine_cuz_scared = True
