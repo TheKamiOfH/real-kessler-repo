@@ -186,17 +186,16 @@ def Dukem_n_Nukem(nearest_asteroids: list, ship_state: Dict,current_frame:int) -
     """
     initial_count = len(nearest_asteroids)
     final = 0
+    #do a seperate count for each batch of frames
     for f in range(0+current_frame,3*30+current_frame+30):
         for a in nearest_asteroids:
             asteroid = normalize_ahead(a[0], f)
             if in_ring(asteroid, ship_state):
                 final += 1
 
-            if final/initial_count>1/10:
-                if f-30*3 > 0:
-                    return(3,max(f-3*30+30,0))
-                
-                break
+            if final/initial_count>1/3:
+               return(3,max(f-3*30,0))
+               break
     return(0,0)      
 def asteroid_score(asteroid_entry, ship_state):
     asteroid, frames_until_collision, _, initial_turning = asteroid_entry
@@ -262,8 +261,17 @@ class TestController(KesslerController):
             bool: fire control value. Shoots if true
             bool: mine deployment control value. Lays mine if true
         """
-       
-       
+        if game_state['sim_frame'] == 0:
+            self.dead_asteroids_dict = {} # Dictionary to keep track of dead asteroids
+            self.sequence = {}
+            self.current_frame = 0
+            self.closest_asteroid ={}
+            self.targeted = False
+            self.num_mines_to_drop = 0
+            self.mine_dropped = False
+            self.frame_to_drop = 0 # Track when the last mine was dropped
+            self.dropped_mine_cuz_scared = False  # Flag to indicate if a mine was dropped due to being scared
+
         foresight = 800/30 # 800 pixels per second, assuming 30 FPS
         max_time = 1280.62485 * 30/800
         found = False
@@ -291,16 +299,18 @@ class TestController(KesslerController):
             # Sort asteroids by distance
             nearest_asteroids.sort(key=lambda x: asteroid_score(x, ship_state))  # Sort by frames until collision, initial turning, and distance
             #print(f"Nearest asteroids: {nearest_asteroids}")
-        '''
+        
+        #above a threshold, if we're going to get hit above a threshold, dont drop when respawning
         if nearest_asteroids != []:
             self.closest_asteroid = nearest_asteroids[0][0]
-            if (self.num_mines_to_drop<=0) and ((self.current_frame - self.frame_to_drop > 0) or self.current_frame == 0) and (ship_state['mines_remaining'] > 0):
+            if (self.num_mines_to_drop<=0) and ((self.current_frame - self.frame_to_drop >0) or self.current_frame == 0) and (ship_state['mines_remaining'] > 0):
                 nuke_logic = Dukem_n_Nukem(nearest_asteroids, ship_state, self.current_frame)
                 if nuke_logic[0] > 0:  # If nuking is required
                     self.num_mines_to_drop = nuke_logic[0]
                     self.frame_to_drop = nuke_logic[1]
-                    self.mine_dropped = False
-        '''
+                    self.mine_dropped = self.dropped_mine_cuz_scared = False
+                 
+        
                 
                     
 
@@ -314,7 +324,7 @@ class TestController(KesslerController):
 
          
             #print("No asteroids in range")
-        '''
+        
         if self.current_frame in self.sequence.keys():
             self.targeted = self.sequence[self.current_frame][4]  # Check if we are currently targeting an asteroid
             if self.targeted:  # sanity checking our targeted asteroid
@@ -327,12 +337,12 @@ class TestController(KesslerController):
                         if self.sequence[j][4] and back_to_zero(closest_asteroid, game_state) == self.sequence[j][5]:
                             self.sequence[j][4] = False  # Reset the targeted flag for the sequence
                             self.sequence[j][1] = False  # Reset the fire action for the 
-        '''
+        
                         
 
         while((f<30+self.current_frame) and not (self.targeted) and (closest_asteroid != {})):
             # Calculate the future position of the closest 
-            print(f"Frame {f}: Checking asteroid at {closest_asteroid['position']} with velocity {closest_asteroid['velocity']}")
+            #print(f"Frame {f}: Checking asteroid at {closest_asteroid['position']} with velocity {closest_asteroid['velocity']}")
             bullet_spawn_x = ship_state['position'][0] + 20 * math.cos(math.radians(ship_state['heading']+sign*6*(f-self.current_frame)))
             bullet_spawn_y = ship_state['position'][1] + 20 * math.sin(math.radians(ship_state['heading']+sign*6*(f-self.current_frame)))
             bullet_spawn_x_end = ship_state['position'][0] + (20-12) * math.cos(math.radians(ship_state['heading']+sign*6*(f-self.current_frame)))
@@ -383,7 +393,7 @@ class TestController(KesslerController):
                 '''
                
                 sign = math.copysign(1,angle_difference)
-                equalised_angle_diff = angle_difference/(f-self.current_frame)  # Normalize the angle difference by the number of frames NOT PLUS ONE HERE DONT ASK ME WHY
+                equalised_angle_diff = angle_difference/(f-self.current_frame) if f!=self.current_frame else 99999999  # Normalize the angle difference by the number of frames NOT PLUS ONE HERE DONT ASK ME WHY
                 for i in range(self.current_frame+1,f):
                     
                     if i not in self.sequence.keys():
@@ -511,7 +521,7 @@ class TestController(KesslerController):
             #print 
         if self.current_frame in self.sequence.keys():            
             fire = self.sequence[self.current_frame][1]
-        '''   
+           
         if (ship_state['bullets_remaining']>34) or (ship_state['bullets_remaining']==-1):
              #change this to improve accuracy maybe implement bisection
              if (ship_state['can_fire']):
@@ -520,7 +530,6 @@ class TestController(KesslerController):
         
         else:
             fire = self.sequence[self.current_frame][1] if self.current_frame in self.sequence.keys() else False
-        '''
         # Check if we have a sequence of actions for the current frame
         team = ship_state['team']
         if self.current_frame in self.sequence.keys():
@@ -528,14 +537,15 @@ class TestController(KesslerController):
             thrust = self.sequence[self.current_frame][3]
             #if (self.dropped_mine_cuz_scared):
                 #drop_mine = True
-            '''
-            if (self.num_mines_to_drop>0 and self.current_frame == self.frame_to_drop) or (ship_state['is_respawning']):
-                if(ship_state['is_respawning']):
-                    self.dropped_mine_cuz_scared = True
+            
+            if (self.num_mines_to_drop>0 and self.current_frame >= self.frame_to_drop and ship_state["can_deploy_mine"]): #or (ship_state['is_respawning']):
+                #if(ship_state['is_respawning']):
+                    #self.dropped_mine_cuz_scared = True
                 drop_mine = True
                 thrust = 10
                 self.num_mines_to_drop -= 1
-            '''
+                
+            
             self.targeted = self.sequence[self.current_frame][4]
         
         #s = [s for s in game_state['ships'] if s['team'] != team]
