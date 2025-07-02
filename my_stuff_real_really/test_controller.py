@@ -2,6 +2,7 @@
 # Copyright © 2022 Thales. All Rights Reserved.
 # NOTICE: This file is subject to the license agreement defined in file 'LICENSE', which is part of
 # this source code package.
+#TO IMPLEMENT: TURNING AND WRAPPING BUGFIX, FAREND CONTINOUS MOTION BUGFIX, NUKING AND DODGING RAM BUGFIX
 
 from kesslergame import KesslerController
 from typing import Dict, Tuple
@@ -362,6 +363,8 @@ class TestController(KesslerController):
             #(ttk >= (time + f - self.current_frame+1)) and
             
             if (abs(angle_difference)<=6*(f-self.current_frame)):
+               
+                
                 '''
                 for step in (f+1,f+2+ttk):
                     print("Checking step:", step)
@@ -378,25 +381,27 @@ class TestController(KesslerController):
                         print("Hit detected at step:", step)
                 #found = True
                 '''
+               
                 sign = math.copysign(1,angle_difference)
+                equalised_angle_diff = angle_difference/(f-self.current_frame)  # Normalize the angle difference by the number of frames NOT PLUS ONE HERE DONT ASK ME WHY
                 for i in range(self.current_frame+1,f):
                     
                     if i not in self.sequence.keys():
-                        self.sequence[i] = [sign*6*30,False,False,0,True,back_to_zero(closest_asteroid, game_state)]
+                        self.sequence[i] = [equalised_angle_diff*30,False,False,0,True,back_to_zero(closest_asteroid, game_state)]
                         #format is [turn_rate,fire,drop_mine,thrust,targeted,position wrt 0]
                     else:
-                        self.sequence[i][0] = sign*6*30
+                        self.sequence[i][0] = equalised_angle_diff*30
                 if f not in self.sequence.keys():
-                    self.sequence[f] = [sign*((abs(angle_difference)%6)*30),False,False,0,True,back_to_zero(closest_asteroid, game_state)]
+                    self.sequence[f] = [equalised_angle_diff*30,False,False,0,True,back_to_zero(closest_asteroid, game_state)]
                 else:
-                    self.sequence[f][0] = sign*((abs(angle_difference)%6)*30)
+                    self.sequence[f][0] = equalised_angle_diff*30
                     self.sequence[f][4] = True
                 if f+1 not in self.sequence.keys():
                     self.sequence[f+1] = [0,True,False,0,False,back_to_zero(closest_asteroid, game_state)]
                 else:
                     self.sequence[f+1][1] = True
                     self.sequence[f+1][4] = False
-                self.dead_asteroids_dict[back_to_zero(closest_asteroid, game_state)] = (ttk+f)+1  # Mark the asteroid as dead at frame f+1
+                self.dead_asteroids_dict[back_to_zero(closest_asteroid, game_state)] = (ttk+f)+2  # Mark the asteroid as dead at frame f+1
                 #print("Broke")
                 break
             if (not hit) or (not (abs(angle_difference)<=6*(f-self.current_frame))):
@@ -523,13 +528,14 @@ class TestController(KesslerController):
             thrust = self.sequence[self.current_frame][3]
             #if (self.dropped_mine_cuz_scared):
                 #drop_mine = True
+            '''
             if (self.num_mines_to_drop>0 and self.current_frame == self.frame_to_drop) or (ship_state['is_respawning']):
                 if(ship_state['is_respawning']):
                     self.dropped_mine_cuz_scared = True
                 drop_mine = True
                 thrust = 10
                 self.num_mines_to_drop -= 1
-            
+            '''
             self.targeted = self.sequence[self.current_frame][4]
         
         #s = [s for s in game_state['ships'] if s['team'] != team]
