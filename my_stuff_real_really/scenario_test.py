@@ -7,16 +7,35 @@ import time
 
 from kesslergame import Scenario, KesslerGame, GraphicsType
 from test_controller import TestController
+from jamie_controller import JamieController
+from adversarial_scenarios_for_jie import *
+xfc2024 = [
+    adv_random_small_1,
+    adv_random_small_1_2,
+    adv_multi_wall_left_easy,
+    adv_multi_four_corners,
+    adv_multi_wall_top_easy,
+    adv_multi_2wall_closing,
+    adv_wall_bottom_staggered,
+    adv_multi_wall_right_hard,
+    adv_moving_corridor_angled_1,
+    adv_moving_corridor_angled_1_mines,
+    adv_multi_ring_closing_left,
+    adv_multi_ring_closing_left2,
+    adv_multi_ring_closing_both2,
+    adv_multi_ring_closing_both_inside_fast,
+    adv_multi_two_rings_closing
+]
 
-
+asteroid_states=[
+                              #{"position": (101, 657), "angle": 1, "speed": 151, "size": 1},
+                              {"position": (800, 57), "angle": 1, "speed": 350, "size": 1},
+                            ]
 # Define game scenario
 my_test_scenario = Scenario(name='Test Scenario',
-                           asteroid_states=[ 
-                                {'position': (500, 100), 'angle': 0, 'size': 3, 'speed': 200},  
-                            ],
-                            
+                           num_asteroids = 4,
                             ship_states=[
-                                {'position': (400, 400), 'angle': 90, 'lives': 3, 'team': 1, "mines_remaining": 3},
+                                {'position': (500, 400), 'angle': 180, 'lives': 3, 'team': 1, "mines_remaining": 3},
                                 # {'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
                             ],
                             map_size=(1000, 800),
@@ -27,7 +46,7 @@ my_test_scenario = Scenario(name='Test Scenario',
 # Define Game Settings
 game_settings = {'perf_tracker': True,
                  'graphics_type': GraphicsType.Tkinter,
-                 'realtime_multiplier': 2,
+                 'realtime_multiplier': 1,
                  'graphics_obj': None,
                  'frequency': 30}
 
@@ -36,7 +55,7 @@ game = KesslerGame(settings=game_settings)  # Use this to visualize the game sce
 
 # Evaluate the game
 pre = time.perf_counter()
-score, perf_data = game.run(scenario=my_test_scenario, controllers=[TestController(), TestController()])
+score, perf_data = game.run(scenario=xfc2024[14], controllers=[TestController(),JamieController()][::-1])
 
 # Print out some general info about the result
 print('Scenario eval time: '+str(time.perf_counter()-pre))

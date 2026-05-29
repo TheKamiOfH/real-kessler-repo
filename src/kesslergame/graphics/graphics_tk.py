@@ -73,9 +73,9 @@ class GraphicsTK(KesslerGraphics):
         default_images = ["playerShip1_green.png",
                             "playerShip1_orange.png",
                             "playerShip2_orange.png",
-                            "playerShip3_orange.png"]
+                            "playerShip3_orange.png","TE_1_1.png"]
 
-        img_list = []
+        img_list = ["TE_1_1.png",]
         for file in os.listdir(self.img_dir):
             if file.endswith(".png") or file.endswith(".jpg"):
                 img_list.append(file)
