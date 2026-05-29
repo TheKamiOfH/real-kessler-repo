@@ -3,8 +3,7 @@
 # NOTICE: This file is subject to the license agreement defined in file 'LICENSE', which is part of
 # this source code package.
 
-from typing import Dict, Tuple, Any, Type
-from immutabledict import immutabledict
+from .state_models import GameState, ShipState
 
 
 class KesslerController:
@@ -14,7 +13,7 @@ class KesslerController:
     game_state dictionary. This action method then sets the thrust, turn_rate, and fire commands on the ship object.
     """
 
-    def actions(self, ship_state: Dict[str, Any], game_state: immutabledict[Any, Any]) -> Tuple[float, float, bool, bool]:
+    def actions(self, ship_state: ShipState, game_state: GameState) -> tuple[float, float, bool, bool]:
         """
         Method processed each time step by this controller.
         """

@@ -3,12 +3,11 @@
 # NOTICE: This file is subject to the license agreement defined in file 'LICENSE', which is part of
 # this source code package.
 
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .ship import Ship
-from .asteroid import Asteroid
 from .scenario import Scenario
 from .team import Team
 if TYPE_CHECKING:
@@ -18,7 +17,7 @@ if TYPE_CHECKING:
 class Score:
     def __init__(self, scenario: Scenario) -> None:
         self.sim_time: float = 0.0
-        self.stop_reason: Optional['StopReason'] = None
+        self.stop_reason: 'StopReason' | None = None
 
 
         # Initialize team classes to score team-specific scores
@@ -33,7 +32,7 @@ class Score:
                 if team.team_id == ship.team:
                     team.total_bullets += scenario.bullet_limit
 
-    def update(self, ships: List[Ship], sim_time: float, controller_perf: Optional[List[float]] = None) -> None:
+    def update(self, ships: list[Ship], sim_time: float, controller_perf: list[float] | None = None) -> None:
         self.sim_time = sim_time
         for team in self.teams:
             ast_hit, bul_hit, shots, bullets, mines, deaths, lives = (0, 0, 0, 0, 0, 0, 0)
@@ -50,7 +49,7 @@ class Score:
                         team.eval_times.append(controller_perf[idx])
             team.asteroids_hit, team.bullets_hit, team.shots_fired, team.bullets_remaining, team.mines_remaining, team.deaths, team.lives_remaining = (ast_hit, bul_hit, shots, bullets, mines, deaths, lives)
 
-    def finalize(self, sim_time: float, stop_reason: 'StopReason', ships: List[Ship]) -> None:
+    def finalize(self, sim_time: float, stop_reason: 'StopReason', ships: list[Ship]) -> None:
         self.sim_time = sim_time
         self.stop_reason = stop_reason
         self.final_controllers = [ship.controller for ship in ships]
