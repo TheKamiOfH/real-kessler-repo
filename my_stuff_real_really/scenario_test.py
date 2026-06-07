@@ -6,8 +6,9 @@
 import time
 
 from kesslergame import Scenario, KesslerGame, GraphicsType
-from test_controller import TestController
-from jamie_controller import JamieController
+#from test_controller import TestController
+#from jamie_controller import JamieController
+from TE_vtwo import TEController
 from adversarial_scenarios_for_jie import *
 xfc2024 = [
     adv_random_small_1,
@@ -29,11 +30,11 @@ xfc2024 = [
 
 asteroid_states=[
                               #{"position": (101, 657), "angle": 1, "speed": 151, "size": 1},
-                              {"position": (800, 57), "angle": 1, "speed": 350, "size": 1},
+                              {"position": (800, 57), "angle": 1, "speed": 565,"size": 1},
                             ]
 # Define game scenario
 my_test_scenario = Scenario(name='Test Scenario',
-                           num_asteroids = 4,
+                           asteroid_states=asteroid_states,
                             ship_states=[
                                 {'position': (500, 400), 'angle': 180, 'lives': 3, 'team': 1, "mines_remaining": 3},
                                 # {'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
@@ -55,7 +56,7 @@ game = KesslerGame(settings=game_settings)  # Use this to visualize the game sce
 
 # Evaluate the game
 pre = time.perf_counter()
-score, perf_data = game.run(scenario=xfc2024[14], controllers=[TestController(),JamieController()][::-1])
+score, perf_data = game.run(scenario=my_test_scenario, controllers=[TEController()])
 
 # Print out some general info about the result
 print('Scenario eval time: '+str(time.perf_counter()-pre))
