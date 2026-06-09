@@ -30,11 +30,11 @@ xfc2024 = [
 
 asteroid_states=[
                               #{"position": (101, 657), "angle": 1, "speed": 151, "size": 1},
-                              {"position": (800, 57), "angle": 1, "speed": 565,"size": 1},
+                              {"position": (800, 57), "angle": 1, "speed": 50,"size": 3},
                             ]
 # Define game scenario
 my_test_scenario = Scenario(name='Test Scenario',
-                           asteroid_states=asteroid_states,
+                           num_asteroids=4,
                             ship_states=[
                                 {'position': (500, 400), 'angle': 180, 'lives': 3, 'team': 1, "mines_remaining": 3},
                                 # {'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},

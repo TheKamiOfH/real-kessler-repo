@@ -1,6 +1,7 @@
 #define imminent asteroids
 #better turning logic using only max turns
 from kesslergame import KesslerController
+#from collisions import circle_line_collision_continuous
 from typing import Dict, Tuple
 from pprint import pprint
 import math
@@ -9,10 +10,85 @@ from scipy.optimize import fsolve
 global actions
 actions = {0:{"doing":False, "turning":False, "shooting":False, "dropping_mine":False, "turn": 0, "tts": 0  }}
 
+def circle_circle_collision_time_interval(
+    ax: float, ay: float, vax: float, vay: float, ra: float,
+    bx: float, by: float, vbx: float, vby: float, rb: float
+) -> tuple[float, float]:
+    """
+    Returns (t_enter, t_exit) if the two circles will collide,
+    or (nan, nan) if there's no collision in the future.
+    Can return (-inf, inf) if the circles collide always and ever.
+    """
+    # Courtesy of Jie and Kessler Game
+    # This linalg version is mathematically the same as setting up a quadratic and solving it, but is faster since it simplifies things
+    nan = None
+    separation = ra + rb
 
+    dx = ax - bx
+    dy = ay - by
+    dvx = vax - vbx
+    dvy = vay - vby
+
+    dist_sq = dx * dx + dy * dy
+    speed_sq = dvx * dvx + dvy * dvy
+    dot = dx * dvx + dy * dvy
+    sep_sq = separation * separation
+
+    # Both stationary. Either overlapping forever or never
+    if math.isclose(speed_sq, 0.0):
+        if dist_sq <= sep_sq:
+            return -math.inf, math.inf # Always overlapping
+        else:
+            return nan, nan # Never collide
+
+    # Already outside and moving away (or tangent and moving apart)
+    if dot >= 0.0 and dist_sq > sep_sq:
+        return nan, nan
+
+    # sin check: if angle too wide, paths never intersect within radius band
+    cos_theta_sq = (dot * dot) / (dist_sq * speed_sq)
+    sin_theta_sq = 1.0 - cos_theta_sq
+    min_sin_sq = sep_sq / dist_sq
+
+    if sin_theta_sq > min_sin_sq:
+        return nan, nan  # Will miss each other
+
+    # Compute collision time interval centered around closest approach
+    root_term = math.sqrt((sep_sq - dist_sq * sin_theta_sq) / speed_sq)
+    t_mid = -dot / speed_sq
+
+    t_enter = t_mid - root_term
+    t_exit  = t_mid + root_term
+
+    return t_enter, t_exit
+
+def canonize(asteroid,current_frame):
+    delta_t = 1/30
+    new_a_x = (asteroid["position"][0] - asteroid["velocity"][0] * current_frame * delta_t)%1000
+    new_a_y = (asteroid["position"][1] - asteroid["velocity"][1] * current_frame * delta_t)%800
+    return (new_a_x, new_a_y, asteroid["size"])
+def dist_evaluate_asteroid(ship_state, asteroid):
+    return distance(ship_state["position"][0], ship_state["position"][1], asteroid["position"][0], asteroid["position"][1]) 
+def coll_evaluate_asteroid(ship_state, asteroid):
+    tup = circle_circle_collision_time_interval(ship_state["position"][0], ship_state["position"][1],0,0,ship_state["radius"],asteroid["position"][0], asteroid["position"][1], asteroid["velocity"][0], asteroid["velocity"][1], asteroid["radius"])
+    if tup[0] is not None: 
+        if tup[0] < 0:
+            if tup[1] is None or tup[1] < 0:
+                return None
+            tup[0] = tup[1]
+    if tup[0] is not None:
+        if tup[0] == math.inf or tup[0] == -math.inf:
+            return -math.inf
+        return tup[0]
+    return None
 
 def distance(x1,y1,x2,y2):
     return math.sqrt((x2-x1)**2 + (y2-y1)**2)
+def can_shoot(actions,frame):
+    for i in range(frame-3, frame):
+        if i in actions.keys() and actions[i]["shooting"]:
+            return False
+    return True
 
 def aim_bot(s_x,s_y,a_x,a_y,a_vx,a_vy,s_h) -> None:
     "Update the actions dict wih the appropriate turning and shooting actions"
@@ -26,8 +102,9 @@ def aim_bot(s_x,s_y,a_x,a_y,a_vx,a_vy,s_h) -> None:
     if current_frame == -1:
         current_frame = max(actions.keys()) + 1
     for f in  range(0,330):
+        last_thing = False
         new_a_x = (a_x + a_vx * f * delta_t)%1000
-        new_a_y = (a_y + a_vy * f * delta_t)%600
+        new_a_y = (a_y + a_vy * f * delta_t)%800
         theta1 = math.atan2(new_a_y-s_y, new_a_x-s_x) # account for bullet spawn here
         theta1 = math.degrees(theta1)%360
         angle_diff = (theta1 - s_h)%360
@@ -50,6 +127,13 @@ def aim_bot(s_x,s_y,a_x,a_y,a_vx,a_vy,s_h) -> None:
         #max_turn_frames = math.floor(abs(angle_diff) / 6)
         if 6*max_turn_frames < abs(angle_diff):
             last_thing = True
+        if last_thing:
+            turning_frames = max_turn_frames + 1
+        else:
+            turning_frames = max_turn_frames
+        if not can_shoot(actions,current_frame + turning_frames + shooting_frames):
+            #print("Triggtered no shoot")
+            continue
         if turning_frames + shooting_frames <= f:
             #decide what to do for the frames before we start turning
             extra_frames = f - max_turn_frames - shooting_frames
@@ -71,9 +155,9 @@ def aim_bot(s_x,s_y,a_x,a_y,a_vx,a_vy,s_h) -> None:
                 action["turn"] = sign *6*30
             if last_thing: #and actions[current_frame + extra_frames + max_turn_frames]["tts"] == 0 or actions[current_frame + extra_frames + max_turn_frames]["tts"] == 1:
                 if current_frame + max_turn_frames + extra_frames + 1 not in actions.keys():
-                    actions[current_frame + max_turn_frames + extra_frames + 1 ] = {"doing":True, "turning":False, "shooting":False, "dropping_mine":False, "turn": 0,"tts":0}
+                    actions[current_frame + max_turn_frames + extra_frames + 0 ] = {"doing":True, "turning":False, "shooting":False, "dropping_mine":False, "turn": 0,"tts":0}
             
-                action= actions[current_frame + max_turn_frames + extra_frames + 1]
+                action= actions[current_frame + max_turn_frames + extra_frames + 0]
            
            
                 #still some turning to do after max turn frames, so shoot while turning
@@ -117,7 +201,8 @@ class TEController(KesslerController):
         Any variables or initialization desired for the controller can be set up here
         """
         ...
-        self.dead_asteroids_dict = {} # Dictionary to keep track of dead asteroids
+        #self.dead_asteroids_dict = {} # Dictionary to keep track of dead asteroids
+        self.d_list = [] #list of dead asteroids
         self.sequence = {}
         self.current_frame = 0
         self.closest_asteroid ={}
@@ -129,9 +214,29 @@ class TEController(KesslerController):
    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
        
        doing = True if self.current_frame in actions and actions[self.current_frame]["doing"] else False
+       if len(self.d_list) > 20:
+           self.d_list = self.d_list[1:]
        if not doing:
-           aim_bot(ship_state["position"][0], ship_state["position"][1], game_state["asteroids"][0]["position"][0], game_state["asteroids"][0]["position"][1], game_state["asteroids"][0]["velocity"][0], game_state["asteroids"][0]["velocity"][1], ship_state["heading"])
-           print(actions)
+           
+           target = None
+           score = 10000000000
+           for asteroid in game_state["asteroids"]:
+                if asteroid not in self.d_list:
+                     if coll_evaluate_asteroid(ship_state, asteroid) is not None and coll_evaluate_asteroid(ship_state, asteroid) < score:
+                         score = coll_evaluate_asteroid(ship_state, asteroid)
+                         target = asteroid
+           if target is None:
+                for asteroid in game_state["asteroids"]:
+                    if asteroid not in self.d_list:
+                        if dist_evaluate_asteroid(ship_state, asteroid) < score:
+
+                            score = dist_evaluate_asteroid(ship_state, asteroid)
+                            target = asteroid
+           if target is not None:
+                       canon_pos = canonize(target,self.current_frame)
+                       self.d_list.append(canon_pos)
+                       aim_bot(ship_state["position"][0], ship_state["position"][1], target["position"][0], target["position"][1], target["velocity"][0], target["velocity"][1], ship_state["heading"])
+           #print(actions)
        fire = actions[self.current_frame]["shooting"] if self.current_frame in actions else False
        turn = actions[self.current_frame]["turn"] if self.current_frame in actions else 0
        thrust = 0
