@@ -7,7 +7,7 @@ import time
 
 from kesslergame import Scenario, KesslerGame, GraphicsType
 #from test_controller import TestController
-#from jamie_controller import JamieController
+from jamie_controller import JamieController
 from TE_vtwo import TEController
 from adversarial_scenarios_for_jie import *
 xfc2024 = [
@@ -34,10 +34,10 @@ asteroid_states=[
                             ]
 # Define game scenario
 my_test_scenario = Scenario(name='Test Scenario',
-                           num_asteroids=4,
+                           num_asteroids=7,
                             ship_states=[
                                 {'position': (500, 400), 'angle': 180, 'lives': 3, 'team': 1, "mines_remaining": 3},
-                                # {'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
+                                #{'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
                             ],
                             map_size=(1000, 800),
                             time_limit=100000000,

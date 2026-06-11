@@ -62,24 +62,60 @@ def circle_circle_collision_time_interval(
 
     return t_enter, t_exit
 
+def do_drop_mine(game_state, ship_state, current_frame):
+    count = 0
+    i_count = 0
+    d_count = 0
+    d_score = math.inf
+    #add a check based on number of asteroids in close proximity
+    if ship_state["mines_remaining"] <= 0:
+        return (False, 0, 0,0)
+    for asteroid in game_state["asteroids"]:
+        score = coll_evaluate_asteroid(ship_state, asteroid)
+        d_score = math.inf
+        for i in range(30):
+            a_x = asteroid["position"][0] + asteroid["velocity"][0]*i*(1/30)
+            a_y = asteroid["position"][1] + asteroid["velocity"][1]*i*(1/30)
+            cache = distance(a_x,a_y,ship_state["position"][0],ship_state["position"][1])
+            if cache < d_score:
+                d_score = cache
+        if score is not None and score < 30:
+            count+=1
+        if score is not None and score < 1 :
+            i_count += 1
+        if d_score is not None and d_score < 250:
+            d_count+=1
+    if count >= 5 or i_count >= 1 or d_score>10:
+        return (True, count,i_count,d_count)
+    return (False,0,0,0)
 def canonize(asteroid,current_frame):
     delta_t = 1/30
-    new_a_x = (asteroid["position"][0] - asteroid["velocity"][0] * current_frame * delta_t)%1000
-    new_a_y = (asteroid["position"][1] - asteroid["velocity"][1] * current_frame * delta_t)%800
+    new_a_x = round((asteroid["position"][0] - asteroid["velocity"][0] * current_frame * delta_t)%1000,2)
+    new_a_y = round((asteroid["position"][1] - asteroid["velocity"][1] * current_frame * delta_t)%800,2)
     return (new_a_x, new_a_y, asteroid["size"])
-def dist_evaluate_asteroid(ship_state, asteroid):
-    return distance(ship_state["position"][0], ship_state["position"][1], asteroid["position"][0], asteroid["position"][1]) 
+def rot_evaluate_asteroid(ship_state, asteroid):
+    theta1 = math.atan2(asteroid["position"][1]-ship_state["position"][1], asteroid["position"][0]-ship_state["position"][0]) # account for bullet spawn here
+    theta1 = math.degrees(theta1)%360
+    angle_diff = (theta1 - ship_state["heading"])%360
+    if angle_diff > 180:
+        angle_diff -= 360
+    frame_diff = math.ceil(abs(angle_diff) / 6)
+    return frame_diff
+
 def coll_evaluate_asteroid(ship_state, asteroid):
     tup = circle_circle_collision_time_interval(ship_state["position"][0], ship_state["position"][1],0,0,ship_state["radius"],asteroid["position"][0], asteroid["position"][1], asteroid["velocity"][0], asteroid["velocity"][1], asteroid["radius"])
+    check = None
     if tup[0] is not None: 
         if tup[0] < 0:
             if tup[1] is None or tup[1] < 0:
                 return None
-            tup[0] = tup[1]
-    if tup[0] is not None:
+            check = tup[1]
+        else:
+            check = tup[0]  
+    if check is not None:
         if tup[0] == math.inf or tup[0] == -math.inf:
             return -math.inf
-        return tup[0]
+        return check
     return None
 
 def distance(x1,y1,x2,y2):
@@ -209,28 +245,32 @@ class TEController(KesslerController):
         self.targeted = False
         self.num_mines_to_drop = 0
         self.mine_dropped = False
+        self.last_dropped_mine_frame = -100
         self.frame_to_drop = 0 # Track when the last mine was dropped
-        self.dropped_mine_cuz_scared = False  # Flag to indicate if a mine was dropped due to being scared
+        self.dropped_mine_cuz_scared = -100  # Flag to indicate if a mine was dropped due to being scared
    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
        
        doing = True if self.current_frame in actions and actions[self.current_frame]["doing"] else False
-       if len(self.d_list) > 20:
+       if len(self.d_list) > 2 or len(self.d_list) >= len(game_state["asteroids"]) - 1:
            self.d_list = self.d_list[1:]
        if not doing:
            
            target = None
            score = 10000000000
            for asteroid in game_state["asteroids"]:
-                if asteroid not in self.d_list:
-                     if coll_evaluate_asteroid(ship_state, asteroid) is not None and coll_evaluate_asteroid(ship_state, asteroid) < score:
-                         score = coll_evaluate_asteroid(ship_state, asteroid)
+                key = canonize(asteroid,self.current_frame)
+                if key not in self.d_list:
+                     cache = coll_evaluate_asteroid(ship_state, asteroid)
+                     if cache is not None and cache < score:
+                         score = cache
                          target = asteroid
            if target is None:
                 for asteroid in game_state["asteroids"]:
-                    if asteroid not in self.d_list:
-                        if dist_evaluate_asteroid(ship_state, asteroid) < score:
-
-                            score = dist_evaluate_asteroid(ship_state, asteroid)
+                    key = canonize(asteroid,self.current_frame)
+                    if key not in self.d_list:
+                        cache = rot_evaluate_asteroid(ship_state, asteroid)
+                        if cache is not None and cache < score:
+                            score = cache
                             target = asteroid
            if target is not None:
                        canon_pos = canonize(target,self.current_frame)
@@ -240,7 +280,21 @@ class TEController(KesslerController):
        fire = actions[self.current_frame]["shooting"] if self.current_frame in actions else False
        turn = actions[self.current_frame]["turn"] if self.current_frame in actions else 0
        thrust = 0
-       drop_mine = actions[self.current_frame]["dropping_mine"] if self.current_frame in actions else False
+       drop_mine = False
+       to_drop = do_drop_mine(game_state, ship_state, self.current_frame)
+       if to_drop[0]:
+           if to_drop[2] >=1 and self.current_frame - self.dropped_mine_cuz_scared > 100:
+               self.last_dropped_mine_frame = self.current_frame
+               self.dropped_mine_cuz_scared = self.current_frame
+               drop_mine = True
+           elif to_drop[1]>=5 and self.current_frame - self.last_dropped_mine_frame > 100:
+               drop_mine = True
+           if to_drop[2]>=10 and self.current_frame - self.last_dropped_mine_frame > 100:
+               drop_mine = True
+       if (game_state["time_limit"] != math.inf and game_state["time_limit"] - self.current_frame < 90):
+           drop_mine = True
+           
+       #drop_mine = actions[self.current_frame]["dropping_mine"] if self.current_frame in actions else False
        self.current_frame += 1
        return thrust, turn, fire, drop_mine
    @property
