@@ -3,14 +3,13 @@
 # NOTICE: This file is subject to the license agreement defined in file 'LICENSE', which is part of
 # this source code package.
 
-#THIS PROGRAM IS FREE SOFTWARE.
+# THIS PROGRAM IS FREE SOFTWARE.
 
 from kesslergame import KesslerController
 from typing import Dict, Tuple
 import math
 import numpy as np
 
-import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import matplotlib.pyplot as plt
@@ -21,10 +20,37 @@ print_explanation = False
 do_log_explanation = False
 
 
-
 mine_preventative_lookahead_frames = 8
 super_mario_fudge_factor_64_for_gnuke_mode = 17
 size_thresh_closing_ring = 3
+
+
+def as_plain_dict(obj):
+    """
+    The newer Kessler API passes view/state objects that support read-only
+    dict-style access but do not support item assignment.  Their `.dict`
+    property returns a plain, mutable dictionary copy.
+
+    This helper keeps the controller compatible with both:
+      - old API/plain dicts
+      - new API GameState/ShipState/View objects
+    """
+    if isinstance(obj, dict):
+        return obj
+
+    dict_attr = getattr(obj, "dict", None)
+    if dict_attr is None:
+        return obj
+
+    # In the documented API, `.dict` is a property, but this also supports
+    # method-style APIs if needed.
+    return dict_attr() if callable(dict_attr) else dict_attr
+
+
+def asteroid_dicts(asteroids):
+    """Return a list of plain mutable asteroid dictionaries."""
+    return [as_plain_dict(a) for a in asteroids]
+
 
 # Distance (0 to 1000 px)
 distance = ctrl.Antecedent(np.arange(0, 1001, 1), 'distance')
@@ -65,8 +91,8 @@ rules = [
     ctrl.Rule(distance['medium'] & speed['normal_forward'], thrust['strong_forward']),
     ctrl.Rule(distance['medium'] & speed['forward'], thrust['normal_forward']),
 
-    ctrl.Rule(distance['close'] & speed['normal_forward'], thrust['coast']), #what
-    ctrl.Rule(distance['close'] & speed['forward'], thrust['coast']), #what
+    ctrl.Rule(distance['close'] & speed['normal_forward'], thrust['coast']),  # what
+    ctrl.Rule(distance['close'] & speed['forward'], thrust['coast']),  # what
     ctrl.Rule(distance['close'] & speed['zero'], thrust['coast']),
     ctrl.Rule(distance['close'] & speed['normal_reverse'], thrust['normal_forward']),
 
@@ -79,20 +105,21 @@ rules = [
 thrust_ctrl = ctrl.ControlSystem(rules)
 thrust_sim = ctrl.ControlSystemSimulation(thrust_ctrl)
 
-#fig, axs = plt.subplots(3, 1, figsize=(12, 12))
-#distance.view(ax=axs[0])
-#axs[0].set_title('Distance Membership Functions')
+# fig, axs = plt.subplots(3, 1, figsize=(12, 12))
+# distance.view(ax=axs[0])
+# axs[0].set_title('Distance Membership Functions')
 
-#speed.view(ax=axs[1])
-#axs[1].set_title('Speed Membership Functions')
+# speed.view(ax=axs[1])
+# axs[1].set_title('Speed Membership Functions')
 
-#thrust.view(ax=axs[2])
-#axs[2].set_title('Thrust Membership Functions')
+# thrust.view(ax=axs[2])
+# axs[2].set_title('Thrust Membership Functions')
 
-#plt.tight_layout()
-#plt.show()
+# plt.tight_layout()
+# plt.show()
 
 last_message = ""
+
 
 def log_explanation(message: str):
     global last_message
@@ -106,11 +133,13 @@ def log_explanation(message: str):
                 file.write(message + '\n')
         last_message = message
 
+
 def wrapped_distance(x1, y1, x2, y2, map_size):
     width, height = map_size
     dx = min(abs(x1 - x2), width - abs(x1 - x2))
     dy = min(abs(y1 - y2), height - abs(y1 - y2))
     return math.sqrt(dx**2 + dy**2)
+
 
 def time_to_collision_wrapped(ship_pos, ship_radius, asteroid_pos, asteroid_velocity, asteroid_radius, map_size):
     x_s, y_s = ship_pos
@@ -149,7 +178,10 @@ def time_to_collision_wrapped(ship_pos, ship_radius, asteroid_pos, asteroid_velo
 
     return best_time
 
+
 def canonicalize_asteroid(asteroid, game_time, map_size):
+    asteroid = as_plain_dict(asteroid)
+
     # Take me back to the start babyyyyyy
     x, y = asteroid['position']
     vx, vy = asteroid['velocity']
@@ -158,7 +190,11 @@ def canonicalize_asteroid(asteroid, game_time, map_size):
     y0 = (y - vy * game_time) % height
     return (round(x0, 5), round(y0, 5))
 
+
 def predict_imminent_collision(ship_state: Dict, game_state: Dict, delta_time: float) -> bool:
+    ship_state = as_plain_dict(ship_state)
+    game_state = as_plain_dict(game_state)
+
     ship_pos = ship_state['position']
     ship_radius = 20
     map_size = game_state['map_size']
@@ -170,10 +206,12 @@ def predict_imminent_collision(ship_state: Dict, game_state: Dict, delta_time: f
     )
 
     for asteroid in game_state['asteroids']:
+        asteroid = as_plain_dict(asteroid)
+
         ast_pos = asteroid['position']
         ast_vel = asteroid['velocity']
         ast_radius = asteroid['radius']
-        #rel_vel = (ast_vel[0] - ship_vel[0], ast_vel[1] - ship_vel[1])
+        # rel_vel = (ast_vel[0] - ship_vel[0], ast_vel[1] - ship_vel[1])
         # jk we aint movin
         future_x = ast_pos[0]
         future_y = ast_pos[1]
@@ -184,7 +222,11 @@ def predict_imminent_collision(ship_state: Dict, game_state: Dict, delta_time: f
                 return True
     return False
 
+
 def prioritize_imminent_collision(ship_state: Dict, game_state: Dict, closing_ring: bool) -> Dict:
+    ship_state = as_plain_dict(ship_state)
+    game_state = as_plain_dict(game_state)
+
     ship_pos = ship_state['position']
     ship_radius = ship_state['radius']
     map_size = game_state['map_size']
@@ -193,23 +235,44 @@ def prioritize_imminent_collision(ship_state: Dict, game_state: Dict, closing_ri
     shortest_time = float('inf')
 
     for asteroid in game_state['asteroids']:
-        if closing_ring and asteroid['size'] <= size_thresh_closing_ring and game_state['sim_frame'] < 5*30:
+        asteroid = as_plain_dict(asteroid)
+
+        if closing_ring and asteroid['size'] <= size_thresh_closing_ring and game_state['frame'] < 5 * 30:
             continue
-        t_col = time_to_collision_wrapped(ship_pos, ship_radius, asteroid['position'], asteroid['velocity'], asteroid['radius'], map_size)
+        t_col = time_to_collision_wrapped(
+            ship_pos,
+            ship_radius,
+            asteroid['position'],
+            asteroid['velocity'],
+            asteroid['radius'],
+            map_size
+        )
         if t_col < shortest_time:
             shortest_time = t_col
             imminent_asteroid = asteroid
+
     if len(game_state['asteroids']) > 2 and imminent_asteroid is None:
         # relax bro
         for asteroid in game_state['asteroids']:
-            t_col = time_to_collision_wrapped(ship_pos, ship_radius, asteroid['position'], asteroid['velocity'], asteroid['radius'], map_size)
+            asteroid = as_plain_dict(asteroid)
+
+            t_col = time_to_collision_wrapped(
+                ship_pos,
+                ship_radius,
+                asteroid['position'],
+                asteroid['velocity'],
+                asteroid['radius'],
+                map_size
+            )
             if t_col < shortest_time:
                 shortest_time = t_col
                 imminent_asteroid = asteroid
+
     return imminent_asteroid
 
+
 class JamieController(KesslerController):
-    def __init__(self, fudge_fact = None):
+    def __init__(self, fudge_fact=None):
         global super_mario_fudge_factor_64_for_gnuke_mode
         self.prev_lives = None
         self.last_mine_time = -10
@@ -219,69 +282,123 @@ class JamieController(KesslerController):
         self.last_frame_life_lost = None
         self.fire_this_fram = False
         self.is_closing_ring = False
+        self.list_of_frames_to_drop_mines = []
         if fudge_fact is not None:
             super_mario_fudge_factor_64_for_gnuke_mode = fudge_fact
-        #make better to win 
-    
+        # make better to win
+
     def gnuke_mode(self, ship_state, game_state) -> tuple[bool, list[int]]:
         global super_mario_fudge_factor_64_for_gnuke_mode
+
+        ship_state = as_plain_dict(ship_state)
+        game_state = as_plain_dict(game_state)
+
         is_closing_ring = False
         list_of_frames_to_drop_mines = []
-        # Do a for loop up to 10 seconds into the future to detect a closing ring. CLosing rings must happen within this time
-        asteroids = copy.deepcopy(game_state['asteroids'])
+
+        # Do a for loop up to 10 seconds into the future to detect a closing ring.
+        # Closing rings must happen within this time.
+        #
+        # IMPORTANT FIX:
+        # New API asteroid objects are AsteroidView objects. deepcopy preserves the
+        # view type, so `a['position'] = ...` fails. Convert each asteroid to its
+        # `.dict` copy first so it is safe to mutate in our simulation.
+        asteroids = asteroid_dicts(game_state['asteroids'])
         initial_asts_count = len(asteroids)
-        threshold_fraction_of_asteroids_to_signify_closing_ring = 1/3 # 1/2 is prob fine but let's just do this to be safe
+
+        if initial_asts_count == 0:
+            return False, []
+
+        threshold_fraction_of_asteroids_to_signify_closing_ring = 1 / 3  # 1/2 is prob fine but let's just do this to be safe
+
         # Find pos of asteroids for each frame
-        ship_radius_to_check_closing_ring = 100 # px
+        ship_radius_to_check_closing_ring = 100  # px
         initial_mine_drop_frame = -10000
-        #print("This should be executed")
-        for frame in range(0, 10*30):
+
+        # print("This should be executed")
+        for frame in range(0, 10 * 30):
             count_of_asts_within_mine_radius = 0
+
             for a in asteroids:
-                if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) < ship_radius_to_check_closing_ring:
-                #if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) in [int(ship_radius_to_check_closing_ring - tol,:
+                if wrapped_distance(
+                    ship_state['position'][0],
+                    ship_state['position'][1],
+                    a['position'][0],
+                    a['position'][1],
+                    game_state['map_size']
+                ) < ship_radius_to_check_closing_ring:
+                    # if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) in [int(ship_radius_to_check_closing_ring - tol,:
                     count_of_asts_within_mine_radius += 1
-            if count_of_asts_within_mine_radius/initial_asts_count > threshold_fraction_of_asteroids_to_signify_closing_ring:
+
+            if count_of_asts_within_mine_radius / initial_asts_count > threshold_fraction_of_asteroids_to_signify_closing_ring:
                 log_explanation("CLOSING RING SCENARIO DETECTED! ACTIVATING GNUKE MODE!!!")
-                #print("CLosing ring detected")
+                # print("CLosing ring detected")
                 is_closing_ring = True
                 break
 
             for a in asteroids:
-                a['position'] = ((a['position'][0] + a['velocity'][0]/30.0)%game_state['map_size'][0], (a['position'][1] + a['velocity'][1]/30.0)%game_state['map_size'][1])
+                a['position'] = (
+                    (a['position'][0] + a['velocity'][0] / 30.0) % game_state['map_size'][0],
+                    (a['position'][1] + a['velocity'][1] / 30.0) % game_state['map_size'][1]
+                )
+
         # Now we iterate through a second time to find when to drop the mines
         if is_closing_ring:
-            #print("GOING INTO DEEPER GNUKE CODE")
-            asteroids = copy.deepcopy(game_state['asteroids'])
-            for frame in range(0, 10*30):
-                #print(frame)
+            # print("GOING INTO DEEPER GNUKE CODE")
+            asteroids = asteroid_dicts(game_state['asteroids'])
+
+            for frame in range(0, 10 * 30):
+                # print(frame)
                 count_of_asts_within_mine_radius = 0
-                
+
                 for a in asteroids:
-                    if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) < 150 + a['radius'] - 1:
-                    #if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) in [int(ship_radius_to_check_closing_ring - tol,:
+                    if wrapped_distance(
+                        ship_state['position'][0],
+                        ship_state['position'][1],
+                        a['position'][0],
+                        a['position'][1],
+                        game_state['map_size']
+                    ) < 150 + a['radius'] - 1:
+                        # if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) in [int(ship_radius_to_check_closing_ring - tol,:
                         count_of_asts_within_mine_radius += 1
-                if count_of_asts_within_mine_radius/initial_asts_count > threshold_fraction_of_asteroids_to_signify_closing_ring:
+
+                if count_of_asts_within_mine_radius / initial_asts_count > threshold_fraction_of_asteroids_to_signify_closing_ring:
                     log_explanation("GNUKE MODE FOUND FRAME THAT MINE CAN BE DETONATED IN AND FREEZE STUFF")
-                    #print(f"{frame} GNUKE MODE FOUND FRAME THAT MINE CAN BE DETONATED IN AND FREEZE STUFF")
+                    # print(f"{frame} GNUKE MODE FOUND FRAME THAT MINE CAN BE DETONATED IN AND FREEZE STUFF")
                     print("GNUKE MODE ACTIVATING!!!! KABOOM!!!!")
-                    initial_mine_drop_frame = frame - 3*30
+                    initial_mine_drop_frame = frame - 3 * 30
                     break
 
                 for a in asteroids:
-                    a['position'] = ((a['position'][0] + a['velocity'][0]/30.0)%game_state['map_size'][0], (a['position'][1] + a['velocity'][1]/30.0)%game_state['map_size'][1])
+                    a['position'] = (
+                        (a['position'][0] + a['velocity'][0] / 30.0) % game_state['map_size'][0],
+                        (a['position'][1] + a['velocity'][1] / 30.0) % game_state['map_size'][1]
+                    )
+
         if initial_mine_drop_frame != -10000:
-            #print(super_mario_fudge_factor_64_for_gnuke_mode)
+            # print(super_mario_fudge_factor_64_for_gnuke_mode)
             initial_mine_drop_frame += super_mario_fudge_factor_64_for_gnuke_mode
             initial_mine_drop_frame = max(initial_mine_drop_frame, 0)
-            list_of_frames_to_drop_mines = [initial_mine_drop_frame, initial_mine_drop_frame + 30, initial_mine_drop_frame + 30 + 30]
+            list_of_frames_to_drop_mines = [
+                initial_mine_drop_frame,
+                initial_mine_drop_frame + 30,
+                initial_mine_drop_frame + 30 + 30
+            ]
+
         if is_closing_ring:
             log_explanation(f"{list_of_frames_to_drop_mines=}")
-            #print(list_of_frames_to_drop_mines)
+            # print(list_of_frames_to_drop_mines)
+
         return is_closing_ring, list_of_frames_to_drop_mines
 
     def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
-        if game_state["sim_frame"] == 0:
+        # Convert the new API objects to normal dictionaries immediately.
+        # This keeps the rest of the code compatible with both the old and new API
+        # and prevents accidental mutation of live GameState/ShipState objects.
+        ship_state = as_plain_dict(ship_state)
+        game_state = as_plain_dict(game_state)
+
+        if game_state["frame"] == 0:
             self.last_frame_life = ship_state['lives_remaining']
             self.last_frame_life_lost = -1
             self.prev_lives = None
@@ -289,20 +406,25 @@ class JamieController(KesslerController):
             self.mine_cooldown = 3.0
             self.asteroids_targeted = {}
             self.fire_this_fram = False
-            #print(f"It is timestep {game_state['time']} and we're calling gnuke code")
+            # print(f"It is timestep {game_state['time']} and we're calling gnuke code")
             self.is_closing_ring, self.list_of_frames_to_drop_mines = self.gnuke_mode(ship_state, game_state)
+
         if ship_state['lives_remaining'] < self.last_frame_life:
             log_explanation("OUCH life lost")
-            self.last_frame_life_lost = game_state['sim_frame']
+            self.last_frame_life_lost = game_state['frame']
+
         self.last_frame_life = ship_state['lives_remaining']
-        ship_x, ship_y = ship_state['position'] #(log_explanation = [position])
-        ship_heading_deg = ship_state['heading'] 
+
+        ship_x, ship_y = ship_state['position']  # (log_explanation = [position])
+        ship_heading_deg = ship_state['heading']
         ship_heading_rad = math.radians(ship_heading_deg)
         bullet_speed = 800
         current_time = game_state['time']
         delta_time = game_state['delta_time']
         map_size = game_state['map_size']
-        log_explanation(f"Frame {game_state['sim_frame']}")
+
+        log_explanation(f"Frame {game_state['frame']}")
+
         # Expire old targeting info
         self.asteroids_targeted = {
             k: v for k, v in self.asteroids_targeted.items() if v > current_time
@@ -312,45 +434,74 @@ class JamieController(KesslerController):
         turn = 0
         fire = False
         drop_mine = False
-        
+
         # Mine drop logic
         drop_mine = False
+
         if not self.is_closing_ring:
             # Do regular mine drop logic
-            if (ship_state['can_deploy_mine'] and ship_state['mines_remaining'] > 0 and current_time - self.last_mine_time >= self.mine_cooldown):
+            if (
+                ship_state['can_deploy_mine']
+                and ship_state['mines_remaining'] > 0
+                and current_time - self.last_mine_time >= self.mine_cooldown
+            ):
                 if predict_imminent_collision(ship_state, game_state, delta_time):
-                    asts = copy.deepcopy(game_state['asteroids'])
-                    # MOve all asts 3 secs into future and check if any of them would get blastsed by a mine i drop right noww
+                    # IMPORTANT FIX:
+                    # Convert AsteroidView objects to mutable dictionaries before
+                    # assigning to a['position'].
+                    asts = asteroid_dicts(game_state['asteroids'])
+
+                    # Move all asts 3 secs into future and check if any of them would get blastsed by a mine i drop right noww
                     blat_count = 0
+
                     for a in asts:
-                        a['position'] = ((a['position'][0] + 3*a['velocity'][0])%game_state['map_size'][0], (a['position'][1] + 3*a['velocity'][1])%game_state['map_size'][1])
-                        if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) < 150 + a['radius']:
+                        a['position'] = (
+                            (a['position'][0] + 3 * a['velocity'][0]) % game_state['map_size'][0],
+                            (a['position'][1] + 3 * a['velocity'][1]) % game_state['map_size'][1]
+                        )
+
+                        if wrapped_distance(
+                            ship_state['position'][0],
+                            ship_state['position'][1],
+                            a['position'][0],
+                            a['position'][1],
+                            game_state['map_size']
+                        ) < 150 + a['radius']:
                             blat_count += 1
+
                     if blat_count > 0:
                         log_explanation("Damage incoming, dropping preventitative mine")
                         drop_mine = True
                         self.last_mine_time = current_time
         else:
             # DO GNUKE MODE LOGIC FOR MINEES
-            if game_state['sim_frame'] in self.list_of_frames_to_drop_mines:
+            if game_state['frame'] in self.list_of_frames_to_drop_mines:
                 drop_mine = True
             else:
                 drop_mine = False
+
         dont_spray = False
         self.prev_lives = ship_state['lives_remaining']
         target_asteroid = None
+
         if ship_state['bullets_remaining'] != 0:
             most_imminent_ast = prioritize_imminent_collision(ship_state, game_state, self.is_closing_ring)
+
             for asteroid in game_state['asteroids']:
-                if self.is_closing_ring and asteroid['size'] <= size_thresh_closing_ring and game_state['sim_frame'] < 5*30:
+                asteroid = as_plain_dict(asteroid)
+
+                if self.is_closing_ring and asteroid['size'] <= size_thresh_closing_ring and game_state['frame'] < 5 * 30:
                     continue
+
                 # Go through asterdois and foind target
                 canon_key = canonicalize_asteroid(asteroid, current_time, map_size)
+
                 if canon_key in self.asteroids_targeted:
-                    continue # don't waste bullet, bad for environment badddd
+                    continue  # don't waste bullet, bad for environment badddd
 
                 ast_x, ast_y = asteroid['position']
                 ast_vx, ast_vy = asteroid['velocity']
+
                 t = 0
                 for _ in range(5):
                     # iterateive search to home in on solution (but never actually get there)
@@ -359,26 +510,32 @@ class JamieController(KesslerController):
                     dist = math.sqrt((future_x - ship_x)**2 + (future_y - ship_y)**2)
                     t = dist / bullet_speed
 
-                future_x = ast_x + ast_vx * (t + 1/30)
-                future_y = ast_y + ast_vy * (t + 1/30)
+                future_x = ast_x + ast_vx * (t + 1 / 30)
+                future_y = ast_y + ast_vy * (t + 1 / 30)
                 angle_to = math.atan2(future_y - ship_y, future_x - ship_x)
                 angle_diff = ((angle_to - ship_heading_rad + math.pi) % (2 * math.pi)) - math.pi
                 angle_diff_deg = abs(math.degrees(angle_diff))
+
                 if asteroid is most_imminent_ast:
                     target_asteroid = (asteroid, angle_diff_deg, t, canon_key, future_x, future_y)
                     break
+
                 if target_asteroid is None or angle_diff_deg < target_asteroid[1]:
                     target_asteroid = (asteroid, angle_diff_deg, t, canon_key, future_x, future_y)
 
         my_team = ship_state['team']
-        enemies = [s for s in game_state['ships'] if s['team'] != my_team]
+        enemies = [as_plain_dict(s) for s in game_state['ships'] if as_plain_dict(s)['team'] != my_team]
+
         if enemies and enemies[0]['lives_remaining'] < ship_state['lives_remaining']:
-            log_explanation(f"I have {ship_state['lives_remaining']} lives, which is more than my opponent's {enemies[0]['lives_remaining']} lives. Good time for RAM mode maybe...")
+            log_explanation(
+                f"I have {ship_state['lives_remaining']} lives, which is more than my opponent's {enemies[0]['lives_remaining']} lives. Good time for RAM mode maybe..."
+            )
             greater_lives = True
         else:
             greater_lives = False
-        #if ((target_asteroid is None and not self.fire_this_fram) or ship_state['lives_remaining'] >= 3)*0  and greater_lives:
-        if (greater_lives and ship_state['is_respawning']):
+
+        # if ((target_asteroid is None and not self.fire_this_fram) or ship_state['lives_remaining'] >= 3)*0  and greater_lives:
+        if greater_lives and ship_state['is_respawning']:
             log_explanation("We're doing RAM mode!")
             ram_mode = True
         else:
@@ -393,28 +550,36 @@ class JamieController(KesslerController):
             angle_diff_deg = math.degrees(angle_diff)
 
             turn = max(-180, min(angle_diff_deg * 30, 180))
-            self.fire_this_fram = abs(angle_diff_deg) < 6# or (angle_diff_deg > 18 and ship_state['bullets_remaining'] > 35)
+            self.fire_this_fram = abs(angle_diff_deg) < 6  # or (angle_diff_deg > 18 and ship_state['bullets_remaining'] > 35)
 
-            if abs(angle_diff_deg) < 6: # 6 is deg ship turns in one frame
+            if abs(angle_diff_deg) < 6:  # 6 is deg ship turns in one frame
                 log_explanation('I locked onto an asteroid!')
-                self.asteroids_targeted[canon_key] = current_time + intercept_time # secs
-            elif abs(angle_diff_deg) < 18: # 18 is deg ship turns in one shot cooldown cycle
+                self.asteroids_targeted[canon_key] = current_time + intercept_time  # secs
+            elif abs(angle_diff_deg) < 18:  # 18 is deg ship turns in one shot cooldown cycle
                 dont_spray = True
 
         # RAM mode
-        #ram_mode= True 
+        # ram_mode = True
         if ram_mode:
             drop_mine = False
             fire = False
             my_team = ship_state['team']
-            enemies = [s for s in game_state['ships'] if s['team'] != my_team]
+            enemies = [as_plain_dict(s) for s in game_state['ships'] if as_plain_dict(s)['team'] != my_team]
+
             if enemies:
                 try:
                     # Find closest enemy
                     closest = min(
                         enemies,
-                        key=lambda s: wrapped_distance(ship_x, ship_y, s['position'][0], s['position'][1], map_size)
+                        key=lambda s: wrapped_distance(
+                            ship_x,
+                            ship_y,
+                            s['position'][0],
+                            s['position'][1],
+                            map_size
+                        )
                     )
+
                     target_x, target_y = closest['position']
 
                     # Calculate turning angle
@@ -434,8 +599,11 @@ class JamieController(KesslerController):
                     thrust_sim.compute()
                     fuzzy_thrust = thrust_sim.output['thrust']
 
-                    log_explanation(f"[RAM] Distance: {distance_val:.1f}, Speed: {speed_val:.1f} => Thrust: {fuzzy_thrust:.1f}, Turn: {turn:.1f}")
+                    log_explanation(
+                        f"[RAM] Distance: {distance_val:.1f}, Speed: {speed_val:.1f} => Thrust: {fuzzy_thrust:.1f}, Turn: {turn:.1f}"
+                    )
                     return fuzzy_thrust, turn, False, drop_mine
+
                 except Exception as e:
                     log_explanation(f"fuzzy ram error: {e}")
                     return 0, 0, False, False
@@ -443,40 +611,68 @@ class JamieController(KesslerController):
                 return 0, 0, False, False
 
         if ship_state['is_respawning']:
-            iframes_left = 3*30 - (game_state['sim_frame'] - self.last_frame_life_lost)
-            asts = copy.deepcopy(game_state['asteroids'])
-            # MOve all asts 3 secs into future and check if any of them would get blastsed by a mine i drop right noww
+            iframes_left = 3 * 30 - (game_state['frame'] - self.last_frame_life_lost)
+
+            # IMPORTANT FIX:
+            # Convert AsteroidView objects to mutable dictionaries before
+            # assigning to a['position'] in this lookahead simulation.
+            asts = asteroid_dicts(game_state['asteroids'])
+
+            # Move all asts 3 secs into future and check if any of them would get blastsed by a mine i drop right noww
             freedom_flsg = False
+
             for m in game_state['mines']:
-                if wrapped_distance(ship_state['position'][0], ship_state['position'][1], m['position'][0], m['position'][1], game_state['map_size']) <= ship_state['radius'] + 150:
-                    #m['time_remaining'] <= iframes_left/30 and 
+                m = as_plain_dict(m)
+
+                if wrapped_distance(
+                    ship_state['position'][0],
+                    ship_state['position'][1],
+                    m['position'][0],
+                    m['position'][1],
+                    game_state['map_size']
+                ) <= ship_state['radius'] + 150:
+                    # m['time_remaining'] <= iframes_left/30 and
                     freedom_flsg = True
+
             if not freedom_flsg:
                 for frame in range(iframes_left):
                     if freedom_flsg:
                         break
+
                     for a in asts:
-                        a['position'] = ((a['position'][0] + a['velocity'][0]/30)%game_state['map_size'][0], (a['position'][1] + a['velocity'][1]/30)%game_state['map_size'][1])
-                        if wrapped_distance(ship_state['position'][0], ship_state['position'][1], a['position'][0], a['position'][1], game_state['map_size']) <= ship_state['radius'] + a['radius']:
+                        a['position'] = (
+                            (a['position'][0] + a['velocity'][0] / 30) % game_state['map_size'][0],
+                            (a['position'][1] + a['velocity'][1] / 30) % game_state['map_size'][1]
+                        )
+
+                        if wrapped_distance(
+                            ship_state['position'][0],
+                            ship_state['position'][1],
+                            a['position'][0],
+                            a['position'][1],
+                            game_state['map_size']
+                        ) <= ship_state['radius'] + a['radius']:
                             # We gon get hit so we need to keep the invincibility
                             freedom_flsg = True
                             break
-        
+
         if self.fire_this_fram is True and (not ship_state['is_respawning'] or not freedom_flsg):
             fire = True
         else:
             fire = False
+
         if ship_state['can_fire'] and not (0 <= ship_state['bullets_remaining'] <= 35) and not self.fire_this_fram:
             if not ship_state['is_respawning'] and not dont_spray:
                 fire = True
             else:
                 fire = False
+
         return thrust, turn, fire, drop_mine
 
     @property
     def name(self) -> str:
         return "Nexus"
 
-    #@property
-    #def custom_sprite_path(self) -> str:
-        #return "prideship.png"
+    # @property
+    # def custom_sprite_path(self) -> str:
+    #     return "prideship.png"

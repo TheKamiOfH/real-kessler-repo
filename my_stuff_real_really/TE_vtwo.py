@@ -83,7 +83,7 @@ def do_drop_mine(game_state, ship_state, current_frame):
             count+=1
         if score is not None and score < 1 :
             i_count += 1
-        if d_score is not None and d_score < 250:
+        if d_score is not None and d_score < 50:
             d_count+=1
     if count >= 5 or i_count >= 1 or d_score>10:
         return (True, count,i_count,d_count)
@@ -249,7 +249,7 @@ class TEController(KesslerController):
         self.frame_to_drop = 0 # Track when the last mine was dropped
         self.dropped_mine_cuz_scared = -100  # Flag to indicate if a mine was dropped due to being scared
    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
-       
+       invinc = ship_state["respawn_time_left"]
        doing = True if self.current_frame in actions and actions[self.current_frame]["doing"] else False
        if len(self.d_list) > 2 or len(self.d_list) >= len(game_state["asteroids"]) - 1:
            self.d_list = self.d_list[1:]
@@ -276,6 +276,10 @@ class TEController(KesslerController):
                        canon_pos = canonize(target,self.current_frame)
                        self.d_list.append(canon_pos)
                        aim_bot(ship_state["position"][0], ship_state["position"][1], target["position"][0], target["position"][1], target["velocity"][0], target["velocity"][1], ship_state["heading"])
+                       if target["size"]>1:#if big boi wait a frame
+                           i = len(actions.keys())
+                           i+=1
+                           actions[i] = {"doing":True, "turning":False, "shooting":False, "dropping_mine":False, "turn": 0, "tts": 0  }
            #print(actions)
        fire = actions[self.current_frame]["shooting"] if self.current_frame in actions else False
        turn = actions[self.current_frame]["turn"] if self.current_frame in actions else 0
@@ -289,11 +293,19 @@ class TEController(KesslerController):
                drop_mine = True
            elif to_drop[1]>=5 and self.current_frame - self.last_dropped_mine_frame > 100:
                drop_mine = True
-           if to_drop[2]>=10 and self.current_frame - self.last_dropped_mine_frame > 100:
-               drop_mine = True
-       if (game_state["time_limit"] != math.inf and game_state["time_limit"] - self.current_frame < 90):
+           #if to_drop[2]>=10 and self.current_frame - self.last_dropped_mine_frame > 100:
+               #drop_mine = True
+       if (game_state["time_limit"] != math.inf and game_state["time_limit"] - self.current_frame < 90 and len(game_state["asteroids"])>30):
            drop_mine = True
-           
+       if invinc>0:
+           fire = False
+           drop_mine = False
+           if len(self.d_list)>0:
+            self.d_list.pop()
+           if self.last_dropped_mine_frame == self.current_frame:
+               self.last_dropped_mine_frame = -100
+           if self.dropped_mine_cuz_scared == self.current_frame:
+               self.dropped_mine_cuz_scared = -100
        #drop_mine = actions[self.current_frame]["dropping_mine"] if self.current_frame in actions else False
        self.current_frame += 1
        return thrust, turn, fire, drop_mine
