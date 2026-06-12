@@ -253,6 +253,20 @@ class TEController(KesslerController):
         self.frame_to_drop = 0 # Track when the last mine was dropped
         self.dropped_mine_cuz_scared = -100  # Flag to indicate if a mine was dropped due to being scared
    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
+       if game_state["frame"]==0:
+            self.d_list = [] #list of dead asteroids
+            self.sequence = {}
+            self.current_frame = 0
+            self.closest_asteroid ={}
+            self.targeted = False
+            self.Icount = 0
+            self.num_mines_to_drop = 0
+            self.mine_dropped = False
+            self.last_dropped_mine_frame = -100
+            self.frame_to_drop = 0 # Track when the last mine was dropped
+            self.dropped_mine_cuz_scared = -100  # Flag to indicate if a mine was dropped due to being scared
+            global actions
+            actions = {0:{"doing":False, "turning":False, "shooting":False, "dropping_mine":False, "turn": 0, "tts": 0  }}
        invinc = ship_state["respawn_time_left"]
        doing = True if self.current_frame in actions and actions[self.current_frame]["doing"] else False
        if len(self.d_list) > 2 or len(self.d_list) >= len(game_state["asteroids"]) - 1:
