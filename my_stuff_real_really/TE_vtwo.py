@@ -72,6 +72,8 @@ def do_drop_mine(game_state, ship_state, current_frame):
         return (False, 0, 0,0)
     for asteroid in game_state["asteroids"]:
         score = coll_evaluate_asteroid(ship_state, asteroid)
+        if score is not None:
+            score *=30
         d_score = math.inf
         for i in range(30):
             a_x = asteroid["position"][0] + asteroid["velocity"][0]*i*(1/30)
@@ -81,11 +83,11 @@ def do_drop_mine(game_state, ship_state, current_frame):
                 d_score = cache
         if score is not None and score < 30:
             count+=1
-        if score is not None and score < 1 :
+        if score is not None and score < 2 :
             i_count += 1
-        if d_score is not None and d_score < 50:
+        if d_score is not None and d_score < 250:
             d_count+=1
-    if count >= 5 or i_count >= 1 or d_score>10:
+    if count >= 5 or i_count >= 1 or d_count>10:
         return (True, count,i_count,d_count)
     return (False,0,0,0)
 def canonize(asteroid,current_frame):
@@ -212,6 +214,7 @@ def aim_bot(s_x,s_y,a_x,a_y,a_vx,a_vy,s_h) -> None:
                 '''
                 break
             elif (not last_thing): #and actions[current_frame + extra_frames + max_turn_frames]["tts"] == 0 or actions[current_frame + extra_frames + max_turn_frames]["tts"] == 1:
+                action = actions [current_frame + max_turn_frames + extra_frames -1 ]
                 action["shooting"] = True
                 '''
                 for i in range(current_frame + extra_frames + max_turn_frames + 1, current_frame + extra_frames + max_turn_frames + 3):
@@ -243,6 +246,7 @@ class TEController(KesslerController):
         self.current_frame = 0
         self.closest_asteroid ={}
         self.targeted = False
+        self.Icount = 0
         self.num_mines_to_drop = 0
         self.mine_dropped = False
         self.last_dropped_mine_frame = -100
@@ -256,14 +260,15 @@ class TEController(KesslerController):
        if not doing:
            
            target = None
-           score = 10000000000
+           score = 100
            for asteroid in game_state["asteroids"]:
                 key = canonize(asteroid,self.current_frame)
                 if key not in self.d_list:
                      cache = coll_evaluate_asteroid(ship_state, asteroid)
-                     if cache is not None and cache < score:
-                         score = cache
-                         target = asteroid
+                     if cache is not None:
+                         if cache*30<score*30:
+                            score = cache
+                            target = asteroid
            if target is None:
                 for asteroid in game_state["asteroids"]:
                     key = canonize(asteroid,self.current_frame)
@@ -282,30 +287,46 @@ class TEController(KesslerController):
                            actions[i] = {"doing":True, "turning":False, "shooting":False, "dropping_mine":False, "turn": 0, "tts": 0  }
            #print(actions)
        fire = actions[self.current_frame]["shooting"] if self.current_frame in actions else False
+       if not fire:
+           if ship_state["bullets_remaining"] > 50 or ship_state["bullets_remaining"]==-1:
+               if self.current_frame+3 not in actions.keys() or (not actions[self.current_frame+3]["shooting"]):
+                   fire = True
        turn = actions[self.current_frame]["turn"] if self.current_frame in actions else 0
        thrust = 0
        drop_mine = False
        to_drop = do_drop_mine(game_state, ship_state, self.current_frame)
        if to_drop[0]:
-           if to_drop[2] >=1 and self.current_frame - self.dropped_mine_cuz_scared > 100:
+           if to_drop[2] >=1 and self.current_frame - self.dropped_mine_cuz_scared >= 100:
                self.last_dropped_mine_frame = self.current_frame
                self.dropped_mine_cuz_scared = self.current_frame
                drop_mine = True
-           elif to_drop[1]>=5 and self.current_frame - self.last_dropped_mine_frame > 100:
+           elif to_drop[1]>=500000 and self.current_frame - self.last_dropped_mine_frame > 100:
                drop_mine = True
-           #if to_drop[2]>=10 and self.current_frame - self.last_dropped_mine_frame > 100:
-               #drop_mine = True
-       if (game_state["time_limit"] != math.inf and game_state["time_limit"] - self.current_frame < 90 and len(game_state["asteroids"])>30):
+               self.last_dropped_mine_frame = self.current_frame
+           if to_drop[2]>=550000 and self.current_frame - self.last_dropped_mine_frame > 100:
+               drop_mine = True
+               self.last_dropped_mine_frame = self.current_frame
+       if (game_state["time_limit"] != math.inf and game_state["time_limit"]*30 - self.current_frame <= 90 and len(game_state["asteroids"])>5):
            drop_mine = True
        if invinc>0:
-           fire = False
-           drop_mine = False
-           if len(self.d_list)>0:
-            self.d_list.pop()
-           if self.last_dropped_mine_frame == self.current_frame:
-               self.last_dropped_mine_frame = -100
-           if self.dropped_mine_cuz_scared == self.current_frame:
-               self.dropped_mine_cuz_scared = -100
+            count = 0
+            
+            for asteroid in game_state["asteroids"]:
+                ttc = coll_evaluate_asteroid(ship_state,asteroid)
+                if ttc is not None:
+                    if ttc*30<35:
+                        count +=1
+            
+            if count>0:
+                fire = False
+                drop_mine = False
+                if len(self.d_list)>0:
+                    self.d_list.pop()
+                if self.last_dropped_mine_frame == self.current_frame:
+                    self.last_dropped_mine_frame = -100
+                if self.dropped_mine_cuz_scared == self.current_frame:
+                    self.dropped_mine_cuz_scared = -100
+
        #drop_mine = actions[self.current_frame]["dropping_mine"] if self.current_frame in actions else False
        self.current_frame += 1
        return thrust, turn, fire, drop_mine
