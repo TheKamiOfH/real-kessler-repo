@@ -595,7 +595,7 @@ class TEController(KesslerController):
                             score = cache
                             target = asteroid
            if target is not None:
-                       print("Target Selected")
+                       self._say("T_select","Target Selected this is the first time an asteroid has been selected. To avoid repetition, this message will not be printed again")
                        canon_pos = canonize(target,self.current_frame)
                        self.d_list.append(canon_pos)
                        aim_bot(ship_state["position"][0], ship_state["position"][1], target["position"][0], target["position"][1], target["velocity"][0], target["velocity"][1], ship_state["heading"])
@@ -909,6 +909,10 @@ class TEController(KesslerController):
             str: name of this controller
         """
         return "T.E. v2.0"
+   @property
+   def custom_sprite_path(self) -> str:
+        return "TE_sprite.png"
+
 
         
 
